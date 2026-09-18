@@ -57,7 +57,8 @@ async function loadOverview() {
     if (data.upcoming_earnings && data.upcoming_earnings.length > 0) {
       const next = data.upcoming_earnings[0];
       document.getElementById("kpi-next-earnings").textContent = next.d_day || "D-Day";
-      document.getElementById("kpi-next-company").textContent = `${next.ticker} (${next.fiscal_year}-${next.fiscal_quarter})`;
+      const nextPeriod = next.fiscal_year && next.fiscal_quarter ? `${next.fiscal_year}-${next.fiscal_quarter}` : (next.fiscal_year || '');
+      document.getElementById("kpi-next-company").textContent = nextPeriod ? `${next.ticker} (${nextPeriod})` : next.ticker;
     }
 
     // Render upcoming table in overview
@@ -68,7 +69,7 @@ async function loadOverview() {
           <td><span class="status-pill" style="font-weight:700;">${item.d_day}</span></td>
           <td><strong>${item.ticker}</strong> <span style="font-size:0.75rem; color:var(--text-muted);">${item.name_ko}</span></td>
           <td><span class="layer-tag ${getLayerShort(item.layer_code)}">${getLayerShort(item.layer_code)}</span></td>
-          <td>${item.fiscal_year}-${item.fiscal_quarter}</td>
+          <td>${item.fiscal_year && item.fiscal_quarter ? `${item.fiscal_year}-${item.fiscal_quarter}` : (item.fiscal_year || '-')}</td>
           <td>${item.expected_date}</td>
           <td>${item.call_time_et || '미정'}</td>
           <td><span style="font-size:0.75rem; color:var(--accent-cyan);">${item.status || 'UPCOMING'}</span></td>
@@ -241,7 +242,7 @@ async function loadCalendarTable() {
         <td><strong>${item.ticker}</strong></td>
         <td>${item.name_ko}</td>
         <td><span class="layer-tag ${getLayerShort(item.layer_code)}">${getLayerShort(item.layer_code)}</span></td>
-        <td>${item.fiscal_year}-${item.fiscal_quarter}</td>
+        <td>${item.fiscal_year && item.fiscal_quarter ? `${item.fiscal_year}-${item.fiscal_quarter}` : (item.fiscal_year || '-')}</td>
         <td>${item.expected_date}</td>
         <td>${item.call_time_et ? `${item.call_time_et} ET` : '시간 미정'}</td>
         <td><span style="font-size:0.78rem; color:var(--accent-cyan); font-weight:600;">${item.status}</span></td>
@@ -280,7 +281,7 @@ async function openCompanyModal(ticker) {
       filingTbody.innerHTML = data.filings.map(f => `
         <tr>
           <td><span class="filing-badge filing-${f.filing_type}">${f.filing_type}</span></td>
-          <td>${f.fiscal_year}-${f.fiscal_quarter}</td>
+          <td>${f.fiscal_year && f.fiscal_quarter ? `${f.fiscal_year}-${f.fiscal_quarter}` : (f.fiscal_year || '-')}</td>
           <td>${f.filed_date}</td>
           <td style="font-family:'JetBrains Mono',monospace; font-size:0.75rem;">${f.accession_number || '-'}</td>
           <td><span class="status-pill" style="font-size:0.72rem;">${f.status}</span></td>
@@ -1430,12 +1431,13 @@ function renderQuarterlySummary(series, entity) {
     revEl.textContent = `$${(latest.revenue / 1000).toFixed(1)}B`;
   }
   if (revSubEl) {
+    const periodStr = latest.period || latest.period_key || (latest.fiscal_year ? `${latest.fiscal_year}-${latest.fiscal_quarter}` : "");
     const yoy = latest.revenue_yoy_pct;
     if (yoy !== null && yoy !== undefined) {
-      revSubEl.textContent = `YoY ${yoy > 0 ? '+' : ''}${yoy.toFixed(1)}% (${latest.period})`;
+      revSubEl.textContent = `YoY ${yoy > 0 ? '+' : ''}${yoy.toFixed(1)}% (${periodStr})`;
       revSubEl.style.color = yoy >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)";
     } else {
-      revSubEl.textContent = `${latest.period} 기준`;
+      revSubEl.textContent = `${periodStr} 기준`;
     }
   }
 
@@ -1457,7 +1459,8 @@ function renderQuarterlySummary(series, entity) {
     capexEl.textContent = `$${(latest.capex / 1000).toFixed(1)}B`;
   }
   if (capexSubEl) {
-    capexSubEl.textContent = `설비투자액 (${latest.period})`;
+    const periodStr = latest.period || latest.period_key || (latest.fiscal_year ? `${latest.fiscal_year}-${latest.fiscal_quarter}` : "");
+    capexSubEl.textContent = `설비투자액 (${periodStr})`;
   }
 }
 
@@ -1469,7 +1472,7 @@ function renderQuarterlyChart(series, ticker) {
   if (!series || series.length === 0) return;
 
   const chronological = [...series].reverse();
-  const labels = chronological.map(d => d.period);
+  const labels = chronological.map(d => d.period || d.period_key || `${d.fiscal_year}-${d.fiscal_quarter}`);
   const revValues = chronological.map(d => d.revenue);
   const opValues = chronological.map(d => d.operating_income);
   const opmValues = chronological.map(d => d.op_margin_pct);
@@ -1575,7 +1578,7 @@ function renderCapexChart(series, ticker) {
   if (!series || series.length === 0) return;
 
   const chronological = [...series].reverse();
-  const labels = chronological.map(d => d.period);
+  const labels = chronological.map(d => d.period || d.period_key || `${d.fiscal_year}-${d.fiscal_quarter}`);
   const capexValues = chronological.map(d => d.capex);
   const dcValues = chronological.map(d => d.revenue_datacenter);
 
@@ -1648,6 +1651,7 @@ function renderQuarterlyTable(series) {
   }
 
   tbody.innerHTML = series.map((row, idx) => {
+    const periodLabel = row.period || row.period_key || (row.fiscal_year ? `${row.fiscal_year}-${row.fiscal_quarter}` : '-');
     const yoy = row.revenue_yoy_pct;
     const yoyBadge = yoy !== null && yoy !== undefined
       ? `<span style="font-size:0.75rem; color:${yoy >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)'}; margin-left:0.4rem;">(${yoy > 0 ? '+' : ''}${yoy.toFixed(1)}%)</span>`
@@ -1663,9 +1667,9 @@ function renderQuarterlyTable(series) {
 
     return `
       <tr onclick="selectQuarterRow(${idx})" style="cursor: pointer;" id="quarter-row-${idx}">
-        <td><strong>${row.period}</strong></td>
+        <td><strong>${periodLabel}</strong></td>
         <td><span class="filing-badge filing-${row.filing_type || '10-Q'}">${row.filing_type || '10-Q'}</span></td>
-        <td style="color: var(--text-muted); font-size: 0.8rem;">${row.filed_date || '-'}</td>
+        <td style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">${row.report_date || row.filed_date || '-'}</td>
         <td style="text-align: right; font-weight: 600;">$${(row.revenue / 1000).toFixed(1)}B ${yoyBadge}</td>
         <td style="text-align: right; color: var(--accent-cyan);">$${(row.operating_income / 1000).toFixed(1)}B <span style="font-size:0.75rem; color:var(--text-muted);">(${row.op_margin_pct ? row.op_margin_pct.toFixed(1) : '-'}%)</span></td>
         <td style="text-align: right;">$${row.net_income ? (row.net_income / 1000).toFixed(1) + 'B' : '-'}</td>
@@ -1680,6 +1684,7 @@ function renderQuarterlyTable(series) {
 function selectQuarterRow(index) {
   if (!currentQuarterlySeries || !currentQuarterlySeries[index]) return;
   const item = currentQuarterlySeries[index];
+  const periodLabel = item.period || item.period_key || (item.fiscal_year ? `${item.fiscal_year}-${item.fiscal_quarter}` : '-');
 
   // Highlight selected table row
   document.querySelectorAll("#quarterly-financial-tbody tr").forEach(tr => tr.style.background = "");
@@ -1696,10 +1701,10 @@ function selectQuarterRow(index) {
   const ticker = (currentQuarterlyEntity && currentQuarterlyEntity.ticker) || "NVDA";
 
   if (titleEl) {
-    titleEl.innerHTML = `🎙️ ${ticker} ${item.period} (${item.filing_type || '10-Q'}) 경영진 실적 분석 (MD&A) & 주요 코멘트`;
+    titleEl.innerHTML = `🎙️ ${ticker} ${periodLabel} (${item.filing_type || '10-Q'}) 경영진 실적 분석 (MD&A) & 주요 코멘트`;
   }
   if (periodEl) {
-    periodEl.textContent = `${item.period} ${item.filing_type || '10-Q'}`;
+    periodEl.textContent = `${periodLabel} ${item.filing_type || '10-Q'}`;
   }
   if (contentEl) {
     contentEl.textContent = item.mda_summary || "(해당 분기에 등록된 MD&A 요약 정보가 없습니다.)";

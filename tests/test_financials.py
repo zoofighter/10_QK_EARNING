@@ -16,9 +16,18 @@ class TestFinancialsAndSectionExtractor(unittest.TestCase):
 
         # Check most recent quarter has high revenue and datacenter ratio
         latest = res["series"][0]
+        self.assertIn("period", latest)
+        self.assertEqual(latest["period"], "2026-Q2")
+        self.assertIn("report_date", latest)
+        self.assertEqual(latest["report_date"], "2026-08-26")
         self.assertGreater(latest["revenue"], 30000)
         self.assertGreater(latest["segment_datacenter"], 25000)
         self.assertIsNotNone(latest["op_margin_pct"])
+
+        # All quarters should have a valid report_date (실적발표일)
+        for q in res["series"]:
+            self.assertIsNotNone(q["report_date"])
+            self.assertNotEqual(q["report_date"], "")
 
     def test_section_extractor(self):
         sample_text = """

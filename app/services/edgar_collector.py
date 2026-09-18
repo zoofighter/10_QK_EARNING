@@ -190,12 +190,30 @@ class EdgarCollector:
                 r_date = report_dates[idx] if idx < len(report_dates) else None
                 p_doc = primary_docs[idx] if idx < len(primary_docs) else ""
 
-                # Estimate fiscal year and quarter
-                fiscal_year = r_date[:4] if r_date and len(r_date) >= 4 else (f_date[:4] if f_date else "")
-                quarter = "FY"
-                if form in ["10-Q", "6-K"]:
-                    month = int(r_date[5:7]) if r_date and len(r_date) >= 7 else 1
-                    quarter = f"Q{(month - 1) // 3 + 1}"
+                # Estimate fiscal year and quarter respecting entity's fiscal year end
+                fy_end = entity.get("fiscal_year_end") or "12"
+                date_str = r_date or f_date or ""
+                year = int(date_str[:4]) if len(date_str) >= 4 else None
+                month = int(date_str[5:7]) if len(date_str) >= 7 else 1
+
+                if fy_end == "01":
+                    # For entities with January fiscal year end (e.g. NVDA):
+                    # Feb-Apr: Q1, May-Jul: Q2, Aug-Oct: Q3, Nov-Jan: Q4 / FY
+                    if month in [2, 3, 4]:
+                        quarter = "Q1"
+                        fiscal_year = str(year)
+                    elif month in [5, 6, 7]:
+                        quarter = "Q2"
+                        fiscal_year = str(year)
+                    elif month in [8, 9, 10]:
+                        quarter = "Q3"
+                        fiscal_year = str(year)
+                    else: # month in [11, 12, 1]
+                        quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
+                        fiscal_year = str(year - 1 if month == 1 else year)
+                else:
+                    fiscal_year = str(year) if year else ""
+                    quarter = "FY" if form in ["10-K", "20-F"] else f"Q{(month - 1) // 3 + 1}"
 
                 # Download filing if enabled
                 local_path, src_url, raw_text = None, "", ""
