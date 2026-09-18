@@ -1,0 +1,167 @@
+"""
+SEC EDGAR Data Collector Service
+Fetches 10-Q, 10-K, 8-K, 20-F, 6-K filings for companies with CIK numbers.
+Complies with SEC rate limit rules (<10 requests/second with User-Agent header).
+"""
+import time
+import requests
+from pathlib import Path
+from bs4 import BeautifulSoup
+from app.config import SEC_USER_AGENT, SEC_RATE_LIMIT_DELAY, FILINGS_DIR
+from app.models.database import get_db, query_db
+
+SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+SEC_ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{primary_doc}"
+
+class EdgarCollector:
+    def __init__(self):
+        self.headers = {
+            "User-Agent": SEC_USER_AGENT,
+            "Accept-Encoding": "gzip, deflate",
+            "Host": "data.sec.gov"
+        }
+        self.archive_headers = {
+            "User-Agent": SEC_USER_AGENT,
+            "Accept-Encoding": "gzip, deflate",
+            "Host": "www.sec.gov"
+        }
+
+    def _rate_limit(self):
+        time.sleep(SEC_RATE_LIMIT_DELAY)
+
+    def fetch_submissions_meta(self, cik: str):
+        """Fetch entity submissions JSON from SEC EDGAR."""
+        cik_clean = cik.strip().zfill(10)
+        url = SEC_SUBMISSIONS_URL.format(cik=cik_clean)
+        self._rate_limit()
+
+        try:
+            resp = requests.get(url, headers=self.headers, timeout=15)
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                print(f"[EDGAR] Failed to fetch CIK {cik}: HTTP {resp.status_code}")
+                return None
+        except Exception as e:
+            print(f"[EDGAR] Error fetching CIK {cik}: {e}")
+            return None
+
+    def download_filing_document(self, cik: str, accession_number: str, primary_doc: str, target_folder: Path):
+        """Download raw filing document (HTML or HTM)."""
+        cik_int = str(int(cik))
+        acc_nodash = accession_number.replace("-", "")
+        url = SEC_ARCHIVE_URL.format(cik_int=cik_int, acc_nodash=acc_nodash, primary_doc=primary_doc)
+        self._rate_limit()
+
+        try:
+            resp = requests.get(url, headers=self.archive_headers, timeout=20)
+            if resp.status_code == 200:
+                target_folder.mkdir(parents=True, exist_ok=True)
+                local_path = target_folder / f"{accession_number}_{primary_doc}"
+                with open(local_path, "wb") as f:
+                    f.write(resp.content)
+
+                # Extract cleaned text for search / preview (sample first 100k chars for FTS)
+                try:
+                    soup = BeautifulSoup(resp.content, "lxml")
+                    text = soup.get_text(separator=" ", strip=True)
+                except Exception:
+                    text = resp.text[:100000]
+
+                return str(local_path), url, text[:150000]
+            return None, url, ""
+        except Exception as e:
+            print(f"[EDGAR] Error downloading document {primary_doc}: {e}")
+            return None, url, ""
+
+    def collect_for_entity(self, ticker: str, form_types=None, limit=10, download_docs=True):
+        """Collect filings for a single ticker."""
+        if form_types is None:
+            form_types = ["10-Q", "10-K", "8-K", "20-F", "6-K"]
+
+        entity = query_db("SELECT id, ticker, name_en, sec_cik, fiscal_year_end FROM entity WHERE ticker = ?", (ticker,), one=True)
+        if not entity:
+            return {"error": f"Entity not found for ticker {ticker}", "count": 0}
+
+        cik = entity["sec_cik"]
+        if not cik:
+            return {"error": f"No SEC CIK configured for {ticker} ({entity['name_en']})", "count": 0}
+
+        meta = self.fetch_submissions_meta(cik)
+        if not meta or "filings" not in meta or "recent" not in meta["filings"]:
+            return {"error": f"No filing data available from SEC for {ticker}", "count": 0}
+
+        recent = meta["filings"]["recent"]
+        forms = recent.get("form", [])
+        accession_nums = recent.get("accessionNumber", [])
+        filing_dates = recent.get("filingDate", [])
+        report_dates = recent.get("reportDate", [])
+        primary_docs = recent.get("primaryDocument", [])
+
+        collected = []
+        target_indices = [i for i, f in enumerate(forms) if f in form_types][:limit]
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            for idx in target_indices:
+                form = forms[idx]
+                acc_num = accession_nums[idx]
+                f_date = filing_dates[idx] if idx < len(filing_dates) else None
+                r_date = report_dates[idx] if idx < len(report_dates) else None
+                p_doc = primary_docs[idx] if idx < len(primary_docs) else ""
+
+                # Estimate fiscal year and quarter
+                fiscal_year = r_date[:4] if r_date and len(r_date) >= 4 else (f_date[:4] if f_date else "")
+                quarter = "FY"
+                if form in ["10-Q", "6-K"]:
+                    month = int(r_date[5:7]) if r_date and len(r_date) >= 7 else 1
+                    quarter = f"Q{(month - 1) // 3 + 1}"
+
+                # Download filing if enabled
+                local_path, src_url, raw_text = None, "", ""
+                if download_docs and p_doc:
+                    folder = FILINGS_DIR / form
+                    local_path, src_url, raw_text = self.download_filing_document(cik, acc_num, p_doc, folder)
+
+                cur.execute(
+                    """
+                    INSERT INTO filing (
+                        entity_id, filing_type, fiscal_year, fiscal_quarter,
+                        period_end_date, filed_date, accession_number,
+                        source_url, local_file_path, raw_text, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(entity_id, filing_type, fiscal_year, fiscal_quarter, accession_number)
+                    DO UPDATE SET
+                        source_url=excluded.source_url,
+                        local_file_path=coalesce(excluded.local_file_path, filing.local_file_path),
+                        raw_text=coalesce(excluded.raw_text, filing.raw_text),
+                        status='DOWNLOADED'
+                    """,
+                    (
+                        entity["id"], form, fiscal_year, quarter,
+                        r_date, f_date, acc_num,
+                        src_url, local_path, raw_text, "DOWNLOADED"
+                    )
+                )
+                filing_id = cur.lastrowid or 0
+
+                # Update FTS index if text available
+                if raw_text and filing_id:
+                    cur.execute(
+                        """
+                        INSERT INTO filing_fts (filing_id, ticker, filing_type, fiscal_period, content)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (filing_id, ticker, form, f"{fiscal_year}-{quarter}", raw_text[:50000])
+                    )
+
+                collected.append({
+                    "form": form,
+                    "accessionNumber": acc_num,
+                    "filingDate": f_date,
+                    "reportDate": r_date,
+                    "fiscalYear": fiscal_year,
+                    "quarter": quarter
+                })
+
+        return {"ticker": ticker, "collected": collected, "count": len(collected)}

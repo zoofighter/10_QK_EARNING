@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QK_EARNING — AI 밸류체인 실적 & 공시 인텔리전스</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <nav class="navbar">
+    <a href="#" class="brand" onclick="switchTab('tab-overview')">
+      <div class="brand-badge">QK</div>
+      <div>
+        <div class="brand-title">QK_EARNING</div>
+      </div>
+    </a>
+
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="nav-tab-btn active" id="btn-tab-overview" onclick="switchTab('tab-overview')">
+        <span>📊</span> 개요
+      </button>
+      <button class="nav-tab-btn" id="btn-tab-companies" onclick="switchTab('tab-companies')">
+        <span>🏢</span> 34개 기업
+      </button>
+      <button class="nav-tab-btn" id="btn-tab-filings" onclick="switchTab('tab-filings')">
+        <span>📑</span> 공시 아카이브
+      </button>
+      <button class="nav-tab-btn" id="btn-tab-calendar" onclick="switchTab('tab-calendar')">
+        <span>📅</span> 어닝 캘린더
+      </button>
+      <button class="nav-tab-btn" id="btn-tab-indicators" onclick="switchTab('tab-indicators')">
+        <span>🇰🇷</span> 선행지표
+      </button>
+      <button class="nav-tab-btn" id="btn-tab-console" onclick="switchTab('tab-console')">
+        <span>⚡</span> 수집 콘솔
+      </button>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="nav-actions">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="global-search" class="search-input" placeholder="기업, 티커 검색..." oninput="handleGlobalSearch(this.value)">
+      </div>
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span>시스템 정상</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="container">
+
+    <!-- 1. OVERVIEW TAB -->
+    <section id="tab-overview" class="tab-content active">
+      <!-- KPI Stats -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>대상 AI 기업</span>
+            <span>🏢</span>
+          </div>
+          <div class="kpi-value" id="kpi-companies">34</div>
+          <div class="kpi-sub">8개 밸류체인 레이어</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>수집 완료 공시</span>
+            <span>📑</span>
+          </div>
+          <div class="kpi-value" id="kpi-filings">0</div>
+          <div class="kpi-sub">10-Q / 10-K / 8-K 등</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>주가 추적 기업</span>
+            <span>📈</span>
+          </div>
+          <div class="kpi-value" id="kpi-prices">0</div>
+          <div class="kpi-sub">일간 OHLCV 자동 수집</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>다음 실적 발표</span>
+            <span>⏳</span>
+          </div>
+          <div class="kpi-value" id="kpi-next-earnings" style="color: var(--accent-cyan); font-size: 1.8rem;">D-7</div>
+          <div class="kpi-sub" id="kpi-next-company">NVDA (2026-Q3)</div>
+        </div>
+      </div>
+
+      <!-- Overview Split Columns -->
+      <div class="dashboard-columns">
+        <!-- Left: Upcoming Earnings Schedule -->
+        <div class="glass-panel">
+          <div class="section-header">
+            <h2 class="section-title"><span>⏳</span> 다가오는 어닝 일정 & 카운트다운</h2>
+            <button class="btn" onclick="switchTab('tab-calendar')">전체보기 →</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>D-Day</th>
+                  <th>기업</th>
+                  <th>레이어</th>
+                  <th>분기</th>
+                  <th>발표 예정일</th>
+                  <th>시간(ET)</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="overview-calendar-tbody">
+                <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">일정을 불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: Layer Distribution -->
+        <div class="glass-panel">
+          <div class="section-header">
+            <h2 class="section-title"><span>🌐</span> AI 밸류체인 레이어</h2>
+          </div>
+          <div id="overview-layers-list" style="display: flex; flex-direction: column; gap: 0.85rem;">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Filings Feed -->
+      <div class="glass-panel">
+        <div class="section-header">
+          <h2 class="section-title"><span>📰</span> 최근 수집된 SEC Filing 피드</h2>
+          <button class="btn btn-primary" onclick="switchTab('tab-console')">⚡ 데이터 수집 실행</button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>티커</th>
+                <th>기업명</th>
+                <th>문서 유형</th>
+                <th>보고 기간</th>
+                <th>제출일</th>
+                <th>Accession No.</th>
+                <th>상태</th>
+                <th>동작</th>
+              </tr>
+            </thead>
+            <tbody id="overview-filings-tbody">
+              <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">수집된 공시가 없습니다. '수집 콘솔'에서 공시 데이터를 수집해 보세요.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. COMPANIES TAB -->
+    <section id="tab-companies" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>🏢</span> AI 밸류체인 34개 기업</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">레이어별 기업을 탐색하고 최근 공시 및 주가 차트를 확인하세요.</p>
+        </div>
+      </div>
+
+      <!-- Layer Filter Pills -->
+      <div class="layer-filter-bar" id="layer-filter-bar">
+        <button class="layer-pill active" onclick="filterByLayer('ALL')">전체 (34)</button>
+        <button class="layer-pill" onclick="filterByLayer('L2_HYPERSCALER')">L2 하이퍼스케일러 (7)</button>
+        <button class="layer-pill" onclick="filterByLayer('L3_COMPUTE')">L3 컴퓨팅/가속기 (5)</button>
+        <button class="layer-pill" onclick="filterByLayer('L4_FOUNDRY')">L4 파운드리/장비 (7)</button>
+        <button class="layer-pill" onclick="filterByLayer('L5_MEMORY')">L5 메모리/스토리지 (5)</button>
+        <button class="layer-pill" onclick="filterByLayer('L6_OPTICAL')">L6 광통신/네트워킹 (3)</button>
+        <button class="layer-pill" onclick="filterByLayer('L7_INFRA')">L7 인프라/특수 (3)</button>
+        <button class="layer-pill" onclick="filterByLayer('L8_POWER')">L8 전력/에너지 (4)</button>
+      </div>
+
+      <!-- Companies Grid -->
+      <div class="company-grid" id="companies-grid">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 3. FILINGS TAB -->
+    <section id="tab-filings" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>📑</span> SEC Filing 아카이브</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">10-Q, 10-K, 8-K 등 수집된 보고서 목록 및 원문 열람</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <select id="filing-filter-type" class="btn" onchange="loadFilingsTable()">
+            <option value="">모든 양식 (All)</option>
+            <option value="10-Q">10-Q (분기)</option>
+            <option value="10-K">10-K (연간)</option>
+            <option value="8-K">8-K (수시)</option>
+            <option value="20-F">20-F (외국 연간)</option>
+            <option value="6-K">6-K (외국 분기)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="glass-panel">
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>티커</th>
+                <th>기업명</th>
+                <th>문서 유형</th>
+                <th>회계연도</th>
+                <th>분기</th>
+                <th>보고 기간 종료일</th>
+                <th>제출일</th>
+                <th>상태</th>
+                <th>원문 확인</th>
+              </tr>
+            </thead>
+            <tbody id="filings-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. CALENDAR TAB -->
+    <section id="tab-calendar" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>📅</span> 실적 발표 캘린더 & D-Day</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">34개 기업의 분기별 실적 발표 일정 및 컨퍼런스콜 시간</p>
+        </div>
+      </div>
+
+      <div class="glass-panel">
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>D-Day</th>
+                <th>티커</th>
+                <th>기업명</th>
+                <th>레이어</th>
+                <th>회계 분기</th>
+                <th>발표 예정일</th>
+                <th>컨퍼런스콜 시간 (ET)</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody id="calendar-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. INDICATORS TAB -->
+    <section id="tab-indicators" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>🇰🇷</span> 산업 선행지표 — 한국 반도체 수출</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">관세청 순별(10일 단위) 반도체(HS8542) 수출 잠정치 · 매월 1일/11일/21일 발표</p>
+        </div>
+      </div>
+
+      <div class="dashboard-columns">
+        <!-- Left: Chart + Data History -->
+        <div>
+          <!-- Chart -->
+          <div class="glass-panel" style="margin-bottom: 1.5rem;">
+            <div class="section-header">
+              <h3 class="section-title" style="font-size: 1.05rem;"><span>📈</span> 반도체 수출액 추이 (순별, 백만 USD)</h3>
+            </div>
+            <div style="height: 280px; position: relative;">
+              <canvas id="kr-export-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Data Table -->
+          <div class="glass-panel">
+            <div class="section-header">
+              <h3 class="section-title" style="font-size: 1.05rem;"><span>📋</span> 순별 수출 데이터 이력</h3>
+              <select id="kr-ind-type-filter" class="btn" onchange="loadKrExportData()">
+                <option value="KR_SEMI_EXPORT_AMT">반도체 수출액 (M USD)</option>
+                <option value="KR_SEMI_EXPORT_YOY">반도체 수출 YoY (%)</option>
+                <option value="KR_TOTAL_EXPORT_AMT">전체 수출액 (M USD)</option>
+              </select>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>기간</th>
+                    <th>지표값</th>
+                    <th>단위</th>
+                    <th>출처</th>
+                    <th>비고</th>
+                  </tr>
+                </thead>
+                <tbody id="kr-export-tbody">
+                  <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">데이터를 입력해 주세요.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Data Entry Form -->
+        <div class="glass-panel">
+          <h3 style="font-size: 1.05rem; margin-bottom: 1.2rem; color: #fff;">📝 순별 수출 데이터 입력</h3>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">관세청 보도자료에서 확인한 순별 잠정치를 입력합니다.</p>
+
+          <form id="kr-export-form" onsubmit="submitKrExport(event)">
+            <div style="display: flex; gap: 0.6rem; margin-bottom: 0.8rem;">
+              <div style="flex: 1;">
+                <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">연도</label>
+                <input type="number" id="kr-year" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" value="2026" min="2020" max="2030">
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">월</label>
+                <select id="kr-month" class="btn" style="width: 100%;">
+                  <option value="1">1월</option><option value="2">2월</option><option value="3">3월</option>
+                  <option value="4">4월</option><option value="5">5월</option><option value="6">6월</option>
+                  <option value="7">7월</option><option value="8">8월</option><option value="9" selected>9월</option>
+                  <option value="10">10월</option><option value="11">11월</option><option value="12">12월</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 0.8rem;">
+              <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">순 구분</label>
+              <div style="display: flex; gap: 0.5rem;">
+                <label class="layer-pill" style="cursor: pointer;">
+                  <input type="radio" name="kr-period" value="상순" style="display:none;" checked>
+                  상순 (1~10일)
+                </label>
+                <label class="layer-pill" style="cursor: pointer;">
+                  <input type="radio" name="kr-period" value="중순" style="display:none;">
+                  중순 (11~20일)
+                </label>
+                <label class="layer-pill" style="cursor: pointer;">
+                  <input type="radio" name="kr-period" value="하순" style="display:none;">
+                  하순 (21~말일)
+                </label>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 0.8rem;">
+              <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">반도체 수출액 (백만 USD) *</label>
+              <input type="number" id="kr-semi-amt" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" placeholder="예: 4530" step="0.1" required>
+            </div>
+
+            <div style="margin-bottom: 0.8rem;">
+              <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">반도체 수출 YoY 증감률 (%)</label>
+              <input type="number" id="kr-semi-yoy" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" placeholder="예: 45.2" step="0.1">
+            </div>
+
+            <div style="margin-bottom: 0.8rem;">
+              <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">전체 수출액 (백만 USD)</label>
+              <input type="number" id="kr-total-amt" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" placeholder="예: 18200" step="0.1">
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+              <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">메모</label>
+              <input type="text" id="kr-note" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" placeholder="관세청 보도자료 기준">
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">💾 데이터 저장</button>
+          </form>
+
+          <div id="kr-export-result" style="margin-top: 1rem; font-size: 0.82rem; color: var(--accent-emerald); display: none;"></div>
+
+          <hr style="border-color: var(--border-subtle); margin: 1.5rem 0;">
+
+          <div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.7;">
+            <strong style="color: var(--text-secondary);">📌 데이터 출처 안내</strong><br>
+            • 관세청 보도자료: <em>"수출입 현황 [잠정치]"</em><br>
+            • 발표 주기: 매월 1일 / 11일 / 21일<br>
+            • HS Code 8542: 전자집적회로(반도체)<br>
+            • 조회: <a href="https://tradedata.go.kr" target="_blank" style="color: var(--accent-cyan);">tradedata.go.kr</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. CONSOLE TAB -->
+    <section id="tab-console" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>⚡</span> 데이터 수집 제어센터</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">SEC EDGAR API 및 Yahoo Finance 주가 데이터를 수동 트리거합니다.</p>
+        </div>
+      </div>
+
+      <div class="dashboard-columns">
+        <!-- Left: Quick Action Buttons -->
+        <div class="glass-panel">
+          <h3 style="font-size: 1.05rem; margin-bottom: 1rem; color: #fff;">수집 작업 즉시 실행</h3>
+          
+          <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: var(--radius-sm);">
+              <h4 style="font-size: 0.92rem; color: var(--accent-cyan);">1. 엔비디아 (NVDA) SEC Filing 수집</h4>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.3rem 0 0.8rem 0;">최신 10-Q 및 10-K 공시 메타데이터 및 원문을 가져옵니다.</p>
+              <button class="btn btn-primary" onclick="triggerCollection('filings', 'NVDA')">NVDA 수집 시작</button>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: var(--radius-sm);">
+              <h4 style="font-size: 0.92rem; color: var(--accent-secondary);">2. 주요 AI 하이퍼스케일러 & 컴퓨팅 배치 수집</h4>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.3rem 0 0.8rem 0;">NVDA, GOOGL, MSFT, AMZN, META, AMD, TSM, MU의 최신 공시를 일괄 수집합니다.</p>
+              <button class="btn" style="background: var(--accent-secondary); color: white; border: none;" onclick="triggerCollection('filings', null)">배치 공시 수집</button>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: var(--radius-sm);">
+              <h4 style="font-size: 0.92rem; color: var(--accent-emerald);">3. 전체 34개사 주가(yfinance) 동기화</h4>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.3rem 0 0.8rem 0;">일간 OHLCV 데이터를 갱신하여 기업 카드 및 차트에 반영합니다.</p>
+              <button class="btn" style="background: var(--accent-emerald); color: white; border: none;" onclick="triggerCollection('prices', null)">주가 데이터 동기화</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Terminal Execution Log -->
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <span class="terminal-dot dot-red"></span>
+            <span class="terminal-dot dot-yellow"></span>
+            <span class="terminal-dot dot-green"></span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem;">Collection Live Log</span>
+          </div>
+          <div class="terminal-body" id="terminal-body">
+            [SYS] QK_EARNING 제어 콘솔이 준비되었습니다.<br>
+            [SEC] SEC EDGAR Rate Limit (초당 5회 이하) 안전 모드 활성화됨.<br>
+            [DB] SQLite 데이터베이스 연결 확인됨: data/qk_earning.db<br>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Company Detail Modal -->
+  <div class="modal-overlay" id="company-modal" onclick="closeModalOnOverlay(event, 'company-modal')">
+    <div class="modal-container">
+      <button class="modal-close" onclick="closeModal('company-modal')">✕</button>
+      
+      <div style="display: flex; align-items: baseline; gap: 0.8rem; margin-bottom: 0.3rem;">
+        <h2 id="modal-company-ticker" style="font-size: 1.8rem; color: #fff;">NVDA</h2>
+        <span id="modal-company-name-en" style="font-size: 1.1rem; color: var(--text-secondary);">NVIDIA Corp.</span>
+        <span id="modal-company-name-ko" style="font-size: 0.9rem; color: var(--text-muted);">(엔비디아)</span>
+      </div>
+
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;" id="modal-company-badges">
+        <!-- badges -->
+      </div>
+
+      <!-- Stock Price Chart Container -->
+      <div style="background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-secondary);">📈 주가 추이 (최근 30 거래일)</div>
+        <div style="height: 220px; position: relative;">
+          <canvas id="company-price-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Recent Filings in Modal -->
+      <h4 style="font-size: 0.95rem; margin-bottom: 0.7rem; color: #fff;">최근 공시 목록</h4>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>유형</th>
+              <th>분기</th>
+              <th>제출일</th>
+              <th>Accession No.</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="modal-company-filings">
+            <!-- Rendered by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filing Excerpt Modal -->
+  <div class="modal-overlay" id="filing-modal" onclick="closeModalOnOverlay(event, 'filing-modal')">
+    <div class="modal-container">
+      <button class="modal-close" onclick="closeModal('filing-modal')">✕</button>
+      
+      <div style="margin-bottom: 1rem;">
+        <span id="modal-filing-badge" class="filing-badge filing-10-Q">10-Q</span>
+        <h3 id="modal-filing-title" style="font-size: 1.3rem; color: #fff; margin-top: 0.5rem;">NVDA 2026-Q3</h3>
+        <p id="modal-filing-meta" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem;"></p>
+      </div>
+
+      <div style="background: #090D16; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1.2rem; max-height: 400px; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.6; color: #D1D5DB; white-space: pre-wrap;" id="modal-filing-content">
+        내용을 불러오는 중...
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
