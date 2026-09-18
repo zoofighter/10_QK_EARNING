@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS financial_metric (
     metric_type TEXT NOT NULL, -- revenue, eps, op_margin_pct, capex, guidance_rev_next_q, etc.
     value REAL NOT NULL,
     currency TEXT DEFAULT 'USD',
+    original_currency TEXT DEFAULT 'USD', -- KRW, JPY, EUR, TWD, USD
+    fx_rate REAL DEFAULT 1.0, -- Exchange rate applied (e.g. 1350 for KRW/USD)
     unit TEXT DEFAULT 'M', -- M=million, B=billion, T=trillion, pct=%, ratio
     source TEXT DEFAULT 'AUTO', -- AUTO, MANUAL, LLM
     filing_id INTEGER,

@@ -61,5 +61,66 @@ class TestFinancialsAndSectionExtractor(unittest.TestCase):
         risk_text = sections["risk_factors"]["text"]
         self.assertIn("supply chains and packaging capacity", risk_text)
 
+    def test_avgo_financials_and_dates(self):
+        service = FinancialService()
+        res = service.get_quarterly_financials("AVGO")
+        self.assertEqual(res["status"], "success")
+        self.assertGreater(res["count"], 0)
+
+        # Check latest quarters for AVGO (October fiscal year-end)
+        periods = {s["period"]: s for s in res["series"]}
+        self.assertIn("2026-Q3", periods)
+        self.assertEqual(periods["2026-Q3"]["report_date"], "2026-09-10")
+        self.assertEqual(periods["2026-Q3"]["filing_type"], "10-Q")
+
+        self.assertIn("2026-Q2", periods)
+        self.assertEqual(periods["2026-Q2"]["report_date"], "2026-06-09")
+        self.assertEqual(periods["2026-Q2"]["filing_type"], "10-Q")
+
+        self.assertIn("2025-Q4", periods)
+        self.assertEqual(periods["2025-Q4"]["report_date"], "2025-12-18")
+        self.assertEqual(periods["2025-Q4"]["filing_type"], "10-K")
+
+    def test_continuous_quarters_and_apple_fiscal_calendar(self):
+        service = FinancialService()
+
+        # 1. AAPL Check: 27 continuous quarters from 2020-Q1 to 2026-Q3
+        aapl = service.get_quarterly_financials("AAPL")
+        self.assertEqual(aapl["status"], "success")
+        self.assertGreaterEqual(aapl["count"], 26)
+        aapl_periods = [s["period"] for s in aapl["series"]]
+        # Ensure consecutive quarters exist without gaps
+        self.assertEqual(aapl_periods[0], "2026-Q3")
+        self.assertEqual(aapl_periods[1], "2026-Q2")
+        self.assertEqual(aapl_periods[2], "2026-Q1")
+        self.assertEqual(aapl_periods[3], "2025-Q4")
+        self.assertEqual(aapl_periods[4], "2025-Q3")
+        # Apple Q1 (Holiday iPhone quarter) has peak revenue
+        q1_metric = next(s for s in aapl["series"] if s["period"] == "2026-Q1")
+        q2_metric = next(s for s in aapl["series"] if s["period"] == "2026-Q2")
+        self.assertGreater(q1_metric["revenue"], q2_metric["revenue"])
+
+        # 2. MSFT Check: 28 continuous quarters from 2020-Q1 to 2026-Q4
+        msft = service.get_quarterly_financials("MSFT")
+        self.assertEqual(msft["status"], "success")
+        self.assertGreaterEqual(msft["count"], 26)
+        msft_periods = [s["period"] for s in msft["series"]]
+        self.assertEqual(msft_periods[0], "2026-Q4")
+        self.assertEqual(msft_periods[1], "2026-Q3")
+        self.assertEqual(msft_periods[2], "2026-Q2")
+        self.assertEqual(msft_periods[3], "2026-Q1")
+
+        # 3. GOOGL Check: 26 continuous quarters from 2020-Q1 to 2026-Q2
+        googl = service.get_quarterly_financials("GOOGL")
+        self.assertEqual(googl["status"], "success")
+        self.assertGreaterEqual(googl["count"], 26)
+        googl_periods = [s["period"] for s in googl["series"]]
+        self.assertEqual(googl_periods[0], "2026-Q2")
+        self.assertEqual(googl_periods[1], "2026-Q1")
+        self.assertEqual(googl_periods[2], "2025-Q4")
+        self.assertEqual(googl_periods[3], "2025-Q3")
+
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,11 +9,24 @@ let priceChart = null;
 
 // Initialization
 document.addEventListener("DOMContentLoaded", () => {
+  updateTodayDateDisplay();
   loadOverview();
   loadEntities();
   loadFilingsTable();
   loadCalendarTable();
 });
+
+function updateTodayDateDisplay() {
+  const el = document.getElementById("today-date-display");
+  if (!el) return;
+  const now = new Date();
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const dayName = days[now.getDay()];
+  el.textContent = `${y}-${m}-${d} (${dayName})`;
+}
 
 // Tab Switching
 function switchTab(tabId) {
@@ -34,6 +47,9 @@ function switchTab(tabId) {
     const sel = document.getElementById("quarterly-ticker-select");
     const t = sel ? sel.value : "NVDA";
     loadQuarterlyFinancials(t);
+  }
+  if (tabId === "tab-transcripts") {
+    loadTranscriptsList();
   }
   if (tabId === "tab-indicators") {
     loadMemorySpotData();
@@ -134,8 +150,62 @@ async function loadEntities() {
     if (json.status !== "success") return;
     allEntities = json.data;
     renderCompanies();
+    populateQuarterlyCompanySelect(allEntities);
   } catch (err) {
     console.error("Failed to load entities:", err);
+  }
+}
+
+function populateQuarterlyCompanySelect(entities) {
+  const select = document.getElementById("quarterly-ticker-select");
+  if (!select || !entities || entities.length === 0) return;
+
+  const currentVal = select.value || "NVDA";
+
+  const layerOrder = [
+    "L3_COMPUTE",
+    "L2_HYPERSCALER",
+    "L4_FOUNDRY",
+    "L5_MEMORY",
+    "L6_OPTICAL",
+    "L7_INFRA",
+    "L8_POWER"
+  ];
+
+  const layerNames = {
+    "L2_HYPERSCALER": "L2 하이퍼스케일러",
+    "L3_COMPUTE": "L3 컴퓨팅 / AI 가속기",
+    "L4_FOUNDRY": "L4 파운드리 / 반도체 장비",
+    "L5_MEMORY": "L5 메모리 / 스토리지",
+    "L6_OPTICAL": "L6 광통신 / 네트워킹",
+    "L7_INFRA": "L7 인프라 / 특수",
+    "L8_POWER": "L8 전력 / 에너지 인프라"
+  };
+
+  const grouped = {};
+  entities.forEach(e => {
+    const l = e.layer_code || "ETC";
+    if (!grouped[l]) grouped[l] = [];
+    grouped[l].push(e);
+  });
+
+  let html = "";
+  layerOrder.forEach(lCode => {
+    const list = grouped[lCode];
+    if (list && list.length > 0) {
+      const label = `${layerNames[lCode] || lCode} (${list.length}개사)`;
+      html += `<optgroup label="${label}">`;
+      list.forEach(e => {
+        const isSel = e.ticker === currentVal ? "selected" : "";
+        html += `<option value="${e.ticker}" ${isSel}>${e.ticker} (${e.name_ko})</option>`;
+      });
+      html += `</optgroup>`;
+    }
+  });
+
+  select.innerHTML = html;
+  if (!select.value) {
+    select.value = currentVal;
   }
 }
 
@@ -1224,11 +1294,12 @@ function renderMemorySpotSummary(summary) {
   if (!summary) return;
 
   const ddr5 = summary["SPOT_DRAM_DDR5_16GB"];
+  const ddr5Chip = summary["SPOT_DRAM_DDR5_16GB_CHIP"];
   const ddr4 = summary["SPOT_DRAM_DDR4_8GB"];
-  const nand = summary["SPOT_NAND_TLC_512GB"];
+  const ddr4Mod = summary["SPOT_DRAM_DDR4_16GB"];
   const dxi = summary["INDEX_DXI"];
 
-  const updateCard = (valId, subId, item, isPoint = false) => {
+  const updateCard = (valId, subId, item, isPoint = false, isDaily = false) => {
     const valEl = document.getElementById(valId);
     const subEl = document.getElementById(subId);
     if (!valEl || !subEl || !item) return;
@@ -1237,7 +1308,8 @@ function renderMemorySpotSummary(summary) {
       valEl.textContent = isPoint ? Number(item.latest_price).toLocaleString() : `$${Number(item.latest_price).toFixed(2)}`;
       const sign = item.change_pct >= 0 ? "▲ +" : "▼ ";
       const color = item.change_pct >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)";
-      subEl.textContent = `${sign}${item.change_pct}% (전주 대비)`;
+      const term = isDaily ? "(세션 변동)" : "(전주 대비)";
+      subEl.textContent = `${sign}${item.change_pct}% ${term}`;
       subEl.style.color = color;
     } else {
       valEl.textContent = "-";
@@ -1246,10 +1318,11 @@ function renderMemorySpotSummary(summary) {
     }
   };
 
-  updateCard("val-spot-ddr5", "sub-spot-ddr5", ddr5);
-  updateCard("val-spot-ddr4", "sub-spot-ddr4", ddr4);
-  updateCard("val-spot-nand", "sub-spot-nand", nand);
-  updateCard("val-spot-dxi", "sub-spot-dxi", dxi, true);
+  updateCard("val-spot-ddr5", "sub-spot-ddr5", ddr5, false, true);
+  updateCard("val-spot-ddr5-chip", "sub-spot-ddr5-chip", ddr5Chip, false, true);
+  updateCard("val-spot-ddr4", "sub-spot-ddr4", ddr4, false, true);
+  updateCard("val-spot-ddr4-mod", "sub-spot-ddr4-mod", ddr4Mod, false, true);
+  updateCard("val-spot-dxi", "sub-spot-dxi", dxi, true, false);
 }
 
 function switchSpotChart(type) {
@@ -1263,8 +1336,10 @@ function switchSpotChart(type) {
 
   // Update chart title
   const titleMap = {
-    "SPOT_DRAM_DDR5_16GB": "📈 DDR5 16Gb 스팟 현물 가격 추이 (USD)",
-    "SPOT_DRAM_DDR4_8GB": "📈 DDR4 8Gb 스팟 현물 가격 추이 (USD)",
+    "SPOT_DRAM_DDR5_16GB": "📈 DDR5 16GB 모듈 스팟 현물 가격 추이 (USD)",
+    "SPOT_DRAM_DDR5_16GB_CHIP": "📈 DDR5 16Gb eTT 단품 칩 스팟 가격 추이 (USD)",
+    "SPOT_DRAM_DDR4_8GB": "📈 DDR4 16Gb eTT 단품 칩 스팟 가격 추이 (USD)",
+    "SPOT_DRAM_DDR4_16GB": "📈 DDR4 16GB (3200) 모듈 스팟 가격 추이 (USD)",
     "SPOT_NAND_TLC_512GB": "📈 NAND 512Gb TLC 스팟 현물 가격 추이 (USD)",
     "INDEX_DXI": "📈 DXI 메모리 반도체 종합 지수 추이 (Points)"
   };
@@ -1405,9 +1480,17 @@ async function loadQuarterlyFinancials(ticker = "NVDA") {
     renderCapexChart(currentQuarterlySeries, ticker);
     renderQuarterlyTable(currentQuarterlySeries);
 
-    // Default select latest quarter for MD&A highlight
+    // Default select latest quarter for MD&A highlight or reset panel
     if (currentQuarterlySeries.length > 0) {
       selectQuarterRow(0);
+    } else {
+      const titleEl = document.getElementById("mda-panel-title");
+      const periodEl = document.getElementById("mda-panel-period");
+      const contentEl = document.getElementById("mda-panel-content");
+      const tickerName = (currentQuarterlyEntity && currentQuarterlyEntity.name_ko) || ticker;
+      if (titleEl) titleEl.innerHTML = `🎙️ ${tickerName} (${ticker}) 경영진 실적 분석 (MD&A)`;
+      if (periodEl) periodEl.textContent = "데이터 없음";
+      if (contentEl) contentEl.textContent = `현재 ${tickerName} (${ticker})의 수집된 분기 실적 및 MD&A 분석 정보가 없습니다. 상단 '🔄 2020~ 실적 시드 로드'를 통해 대표 기업 시계열을 동기화하세요.`;
     }
   } catch (err) {
     console.error(`Failed to load quarterly financials for ${ticker}:`, err);
@@ -1415,9 +1498,6 @@ async function loadQuarterlyFinancials(ticker = "NVDA") {
 }
 
 function renderQuarterlySummary(series, entity) {
-  if (!series || series.length === 0) return;
-  const latest = series[0];
-
   const revEl = document.getElementById("kpi-q-rev");
   const revSubEl = document.getElementById("kpi-q-rev-sub");
   const opmEl = document.getElementById("kpi-q-opm");
@@ -1426,6 +1506,20 @@ function renderQuarterlySummary(series, entity) {
   const dcAmtEl = document.getElementById("kpi-q-dc-amt");
   const capexEl = document.getElementById("kpi-q-capex");
   const capexSubEl = document.getElementById("kpi-q-capex-sub");
+
+  if (!series || series.length === 0) {
+    if (revEl) revEl.textContent = "-";
+    if (revSubEl) { revSubEl.textContent = "실적 데이터 없음"; revSubEl.style.color = "var(--text-muted)"; }
+    if (opmEl) opmEl.textContent = "-";
+    if (opIncEl) opIncEl.textContent = "영업이익 -";
+    if (dcRatioEl) dcRatioEl.textContent = "-";
+    if (dcAmtEl) dcAmtEl.textContent = "부문 매출 -";
+    if (capexEl) capexEl.textContent = "-";
+    if (capexSubEl) capexSubEl.textContent = "설비투자액 -";
+    return;
+  }
+
+  const latest = series[0];
 
   if (revEl && latest.revenue !== undefined) {
     revEl.textContent = `$${(latest.revenue / 1000).toFixed(1)}B`;
@@ -1646,7 +1740,22 @@ function renderQuarterlyTable(series) {
   if (!tbody) return;
 
   if (!series || series.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">수집된 분기 실적 데이터가 없습니다. 상단 '🔄 2020~ 실적 시드 로드'를 클릭해 보세요.</td></tr>`;
+    const curTicker = (currentQuarterlyEntity && currentQuarterlyEntity.ticker) || "해당 기업";
+    const curName = (currentQuarterlyEntity && currentQuarterlyEntity.name_ko) || curTicker;
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 3rem 1.5rem;">
+          <div style="font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem;">
+            📊 ${curName} (${curTicker})의 수집된 분기 실적이 아직 없습니다.
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.2rem;">
+            상단 '🔄 2020~ 실적 시드 로드' 버튼을 누르시면 대표 기업들의 벤치마크 재무 데이터가 일괄 적재됩니다.
+          </p>
+          <button class="btn" style="background: var(--accent-cyan); color: #0f172a; font-weight: 700; padding: 0.45rem 1.2rem; font-size: 0.85rem;" onclick="seedQuarterlyFinancialsData()">
+            ⚡ 전체 기업 실적 시드 동기화
+          </button>
+        </td>
+      </tr>`;
     return;
   }
 
@@ -1665,16 +1774,25 @@ function renderQuarterlyTable(series) {
       ? `$${(row.revenue_datacenter / 1000).toFixed(1)}B <span style="font-size:0.75rem; color:#A78BFA;">(${row.revenue_datacenter_pct ? row.revenue_datacenter_pct.toFixed(0) : '-'}%)</span>`
       : "-";
 
+    const origRevNote = row.original_revenue_str
+      ? `<div style="font-size:0.75rem; font-weight:400; color:var(--text-muted); margin-top:0.15rem;">${row.original_revenue_str}</div>`
+      : "";
+
+    const fxBadge = row.original_currency && row.original_currency !== 'USD'
+      ? `<span class="filing-badge" style="background: rgba(56, 189, 248, 0.12); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.3); font-size: 0.73rem; padding: 0.2rem 0.45rem;">${row.fx_rate_label || row.original_currency}</span>`
+      : `<span style="color: var(--text-muted); font-size: 0.75rem;">1.0 (USD)</span>`;
+
     return `
       <tr onclick="selectQuarterRow(${idx})" style="cursor: pointer;" id="quarter-row-${idx}">
         <td><strong>${periodLabel}</strong></td>
         <td><span class="filing-badge filing-${row.filing_type || '10-Q'}">${row.filing_type || '10-Q'}</span></td>
         <td style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">${row.report_date || row.filed_date || '-'}</td>
-        <td style="text-align: right; font-weight: 600;">$${(row.revenue / 1000).toFixed(1)}B ${yoyBadge}</td>
+        <td style="text-align: right; font-weight: 600;">$${(row.revenue / 1000).toFixed(1)}B ${yoyBadge}${origRevNote}</td>
         <td style="text-align: right; color: var(--accent-cyan);">$${(row.operating_income / 1000).toFixed(1)}B <span style="font-size:0.75rem; color:var(--text-muted);">(${row.op_margin_pct ? row.op_margin_pct.toFixed(1) : '-'}%)</span></td>
         <td style="text-align: right;">$${row.net_income ? (row.net_income / 1000).toFixed(1) + 'B' : '-'}</td>
         <td style="text-align: right; color: #F43F5E;">$${row.capex ? (row.capex / 1000).toFixed(1) + 'B' : '-'}</td>
         <td style="text-align: right;">${dcText}</td>
+        <td style="text-align: center;">${fxBadge}</td>
         <td style="text-align: center;">${filingBtn}</td>
       </tr>
     `;
@@ -1728,5 +1846,446 @@ async function seedQuarterlyFinancialsData() {
   }
 }
 
+// ========================================================
+// 8. Earnings Call Transcripts Logic
+// ========================================================
 
+let allTranscriptsList = [];
+let currentTranscriptDetail = null;
+let currentTranscriptSection = "all"; // 'all' | 'remarks' | 'qa'
 
+async function loadTranscriptsList() {
+  try {
+    const res = await fetch("/api/earning-calls?limit=200");
+    const json = await res.json();
+    if (json.status !== "success") {
+      console.error("Failed to load transcripts:", json.message);
+      return;
+    }
+
+    allTranscriptsList = json.data || [];
+
+    // Update KPI Bar
+    const kpiTotal = document.getElementById("transcript-kpi-total");
+    const kpiCompanies = document.getElementById("transcript-kpi-companies");
+    const kpiLatest = document.getElementById("transcript-kpi-latest");
+
+    if (kpiTotal) kpiTotal.textContent = `${allTranscriptsList.length}건`;
+    if (kpiCompanies) {
+      const uniqueTickers = new Set(allTranscriptsList.map(t => t.ticker));
+      kpiCompanies.textContent = `${uniqueTickers.size}개사`;
+    }
+    if (kpiLatest) {
+      if (allTranscriptsList.length > 0) {
+        kpiLatest.textContent = allTranscriptsList[0].call_date || "-";
+      } else {
+        kpiLatest.textContent = "-";
+      }
+    }
+
+    populateTranscriptFilterOptions();
+    filterTranscriptsList();
+
+    // Auto-select first transcript if available and none currently selected
+    if (allTranscriptsList.length > 0 && !currentTranscriptDetail) {
+      const firstId = allTranscriptsList[0].id;
+      selectTranscript(firstId);
+    }
+  } catch (err) {
+    console.error("Error loading transcripts list:", err);
+  }
+}
+
+function populateTranscriptFilterOptions() {
+  const select = document.getElementById("transcript-filter-ticker");
+  if (!select) return;
+
+  const currentVal = select.value;
+  const companyMap = new Map();
+  for (const item of allTranscriptsList) {
+    if (!companyMap.has(item.ticker)) {
+      companyMap.set(item.ticker, {
+        ticker: item.ticker,
+        name: item.name_ko || item.name_en || item.ticker,
+        layer: item.layer_code || "ETC",
+        count: 1
+      });
+    } else {
+      companyMap.get(item.ticker).count += 1;
+    }
+  }
+
+  let html = `<option value="">전체 기업 보기 (${allTranscriptsList.length}건 / ${companyMap.size}개사)</option>`;
+
+  const layerNames = {
+    "L2_HYPERSCALER": "L2 하이퍼스케일러 / 빅테크",
+    "L3_COMPUTE": "L3 컴퓨팅 / AI 가속기",
+    "L4_FOUNDRY": "L4 파운드리 / 반도체 장비",
+    "L5_MEMORY": "L5 메모리 / 스토리지",
+    "L6_OPTICAL": "L6 광통신 / AI 네트워킹",
+    "L7_INFRA": "L7 서버 / 랙 인프라",
+    "L8_POWER": "L8 전력 / 에너지 인프라",
+  };
+
+  const sortedCompanies = Array.from(companyMap.values()).sort((a, b) => {
+    if (a.layer !== b.layer) return a.layer.localeCompare(b.layer);
+    return a.ticker.localeCompare(b.ticker);
+  });
+
+  let currentLayer = null;
+  for (const comp of sortedCompanies) {
+    if (comp.layer !== currentLayer) {
+      if (currentLayer !== null) html += `</optgroup>`;
+      currentLayer = comp.layer;
+      const groupLabel = layerNames[currentLayer] || currentLayer;
+      html += `<optgroup label="${groupLabel}">`;
+    }
+    const selected = comp.ticker === currentVal ? "selected" : "";
+    html += `<option value="${comp.ticker}" ${selected}>${comp.ticker} — ${comp.name} (${comp.count}건)</option>`;
+  }
+  if (currentLayer !== null) html += `</optgroup>`;
+
+  select.innerHTML = html;
+  if (currentVal) select.value = currentVal;
+}
+
+function filterTranscriptsList() {
+  const tickerFilter = (document.getElementById("transcript-filter-ticker")?.value || "").toUpperCase().trim();
+  const searchInput = (document.getElementById("transcript-search-input")?.value || "").toLowerCase().trim();
+
+  const filtered = allTranscriptsList.filter(item => {
+    if (tickerFilter && item.ticker !== tickerFilter) return false;
+    if (searchInput) {
+      const matchTicker = (item.ticker || "").toLowerCase().includes(searchInput);
+      const matchName = (item.name_ko || item.name_en || "").toLowerCase().includes(searchInput);
+      const matchPreview = (item.preview_text || "").toLowerCase().includes(searchInput);
+      const matchPeriod = `${item.fiscal_year || ""} ${item.fiscal_quarter || ""}`.toLowerCase().includes(searchInput);
+      if (!matchTicker && !matchName && !matchPreview && !matchPeriod) return false;
+    }
+    return true;
+  });
+
+  renderTranscriptsList(filtered);
+}
+
+function renderTranscriptsList(items) {
+  const container = document.getElementById("transcript-cards-list");
+  if (!container) return;
+
+  if (items.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">일치하는 어닝콜 트랜스크립트가 없습니다.</div>`;
+    return;
+  }
+
+  container.innerHTML = items.map(item => {
+    const isSelected = currentTranscriptDetail && currentTranscriptDetail.id === item.id;
+    const activeClass = isSelected ? "active" : "";
+    const periodBadge = `${item.fiscal_year}-${item.fiscal_quarter}`;
+    const wordCount = item.word_count ? `${item.word_count.toLocaleString()}단어` : (item.char_count ? `${item.char_count.toLocaleString()}자` : '');
+    const cleanName = item.name_ko || item.name_en || item.ticker;
+
+    return `
+      <div class="transcript-card ${activeClass}" id="transcript-card-${item.id}" onclick="selectTranscript(${item.id})">
+        <div class="transcript-card-meta">
+          <div class="transcript-company-title">
+            <span class="filing-badge" style="font-size:0.75rem; background:rgba(99,102,241,0.15); color:#A5B4FC;">${item.ticker}</span>
+            <span>${cleanName}</span>
+          </div>
+          <span class="status-pill" style="font-size:0.72rem; padding:0.1rem 0.45rem;">${periodBadge}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
+          <span>📅 ${item.call_date || '-'}</span>
+          <span>✍️ ${wordCount}</span>
+        </div>
+        <div class="transcript-preview-text">${item.preview_text || ''}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function selectTranscript(callId) {
+  // Update active visual state
+  document.querySelectorAll(".transcript-card").forEach(el => el.classList.remove("active"));
+  const activeCard = document.getElementById(`transcript-card-${callId}`);
+  if (activeCard) activeCard.classList.add("active");
+
+  try {
+    const res = await fetch(`/api/earning-calls/${callId}`);
+    const json = await res.json();
+    if (json.status !== "success") {
+      console.error("Failed to load transcript detail:", json.message);
+      return;
+    }
+
+    currentTranscriptDetail = json.data;
+
+    // Update Reader Header
+    const badgeEl = document.getElementById("reader-company-badge");
+    const titleEl = document.getElementById("reader-title");
+    const dateEl = document.getElementById("reader-date");
+    const wordsEl = document.getElementById("reader-words");
+    const linkEl = document.getElementById("reader-source-link");
+
+    if (badgeEl) badgeEl.textContent = currentTranscriptDetail.ticker;
+    if (titleEl) {
+      const coName = currentTranscriptDetail.name_ko || currentTranscriptDetail.name_en || currentTranscriptDetail.ticker;
+      titleEl.textContent = `${coName} (${currentTranscriptDetail.ticker}) ${currentTranscriptDetail.fiscal_year}-${currentTranscriptDetail.fiscal_quarter} 실적발표 컨퍼런스 콜`;
+    }
+    if (dateEl) dateEl.textContent = `📅 ${currentTranscriptDetail.call_date || '-'}`;
+    if (wordsEl) {
+      const len = currentTranscriptDetail.char_count || (currentTranscriptDetail.transcript_text ? currentTranscriptDetail.transcript_text.length : 0);
+      wordsEl.textContent = `총 ${len.toLocaleString()}자`;
+    }
+    if (linkEl) {
+      if (currentTranscriptDetail.source_url) {
+        linkEl.href = currentTranscriptDetail.source_url;
+        linkEl.style.display = "inline-flex";
+      } else {
+        linkEl.style.display = "none";
+      }
+    }
+
+    renderTranscriptContent();
+  } catch (err) {
+    console.error("Error fetching transcript detail:", err);
+  }
+}
+
+function setTranscriptSectionView(section) {
+  currentTranscriptSection = section;
+
+  document.querySelectorAll("#transcript-section-pills .layer-pill").forEach(btn => btn.classList.remove("active"));
+  const activeBtn = document.getElementById(`pill-section-${section}`);
+  if (activeBtn) activeBtn.classList.add("active");
+
+  renderTranscriptContent();
+}
+
+function renderTranscriptContent() {
+  const container = document.getElementById("transcript-reader-body");
+  if (!container || !currentTranscriptDetail) return;
+
+  const sections = currentTranscriptDetail.sections || {};
+  const remarks = sections.prepared_remarks || currentTranscriptDetail.prepared_remarks || "";
+  const qa = sections.qa_session || currentTranscriptDetail.qa_session || "";
+  const fullText = currentTranscriptDetail.transcript_text || "";
+
+  let html = "";
+
+  if (currentTranscriptSection === "remarks") {
+    if (!remarks) {
+      html = `<div style="text-align:center; color:var(--text-muted); padding:3rem;">경영진 발표문 섹션을 감지하지 못했습니다. 전체 보기를 이용해주세요.</div>`;
+    } else {
+      html = `
+        <div class="section-divider-banner">
+          <span>🎙️</span> 경영진 발표문 (Executive Prepared Remarks)
+        </div>
+        ${formatTranscriptParagraphs(remarks)}
+      `;
+    }
+  } else if (currentTranscriptSection === "qa") {
+    if (!qa) {
+      html = `<div style="text-align:center; color:var(--text-muted); padding:3rem;">애널리스트 Q&A 질의응답 세션을 감지하지 못했습니다. 전체 보기를 이용해주세요.</div>`;
+    } else {
+      html = `
+        <div class="section-divider-banner" style="border-left-color: #8B5CF6; background: linear-gradient(90deg, rgba(139,92,246,0.22), transparent);">
+          <span>💬</span> 월가 애널리스트 질의응답 세션 (Q&A Session)
+        </div>
+        ${formatTranscriptParagraphs(qa)}
+      `;
+    }
+  } else {
+    // "all"
+    if (remarks && qa) {
+      html = `
+        <div class="section-divider-banner">
+          <span>🎙️</span> 제 1부: 경영진 공식 발표문 (Prepared Remarks)
+        </div>
+        ${formatTranscriptParagraphs(remarks)}
+        <div class="section-divider-banner" style="border-left-color: #8B5CF6; background: linear-gradient(90deg, rgba(139,92,246,0.22), transparent);">
+          <span>💬</span> 제 2부: 월가 애널리스트 질의응답 세션 (Q&A Session)
+        </div>
+        ${formatTranscriptParagraphs(qa)}
+      `;
+    } else {
+      html = formatTranscriptParagraphs(fullText);
+    }
+  }
+
+  container.innerHTML = html;
+}
+
+function formatTranscriptParagraphs(rawText) {
+  if (!rawText) return "";
+
+  const lines = rawText.split("\n");
+  let outputHtml = "";
+  let currentBlock = [];
+
+  const flushBlock = () => {
+    if (currentBlock.length > 0) {
+      const paragraph = currentBlock.join("<br>").trim();
+      if (paragraph) {
+        outputHtml += `<div class="transcript-speech-block">${paragraph}</div>`;
+      }
+      currentBlock = [];
+    }
+  };
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushBlock();
+      continue;
+    }
+
+    // Check if line looks like a speaker introduction
+    const isExecutive = /CEO|CFO|COO|President|Executive|VP|Vice President|Head of|대표이사|사장|부사장/i.test(trimmed);
+    const isAnalyst = /Analyst|Securities|Research|Capital|Goldman|Morgan|Bernstein|JPMorgan|Bank of America|UBS|Citi|Barclays|애널리스트|연구원|증권/i.test(trimmed);
+    const isOperator = /Operator|사회자|진행자/i.test(trimmed);
+
+    const isSpeakerLine = (trimmed.length < 120 && (trimmed.endsWith(":") || trimmed.includes(" -- ") || trimmed.includes(" - "))) &&
+      (isExecutive || isAnalyst || isOperator || /^[A-Z][a-z]+ [A-Z][a-z]+/.test(trimmed));
+
+    if (isSpeakerLine) {
+      flushBlock();
+
+      let badgeHtml = "";
+      if (isExecutive) {
+        badgeHtml = `<span class="speaker-badge-exec">👔 Executive</span>`;
+      } else if (isAnalyst) {
+        badgeHtml = `<span class="speaker-badge-analyst">📊 Wall Street Analyst</span>`;
+      } else if (isOperator) {
+        badgeHtml = `<span class="status-pill" style="font-size:0.7rem;">🎙️ Conference Host</span>`;
+      }
+
+      outputHtml += `
+        <div class="transcript-speaker-row" style="margin-top: 1.2rem;">
+          <strong style="color: #fff; font-size: 0.96rem;">${escapeHtml(trimmed)}</strong>
+          ${badgeHtml}
+        </div>
+      `;
+    } else {
+      currentBlock.push(escapeHtml(trimmed));
+    }
+  }
+
+  flushBlock();
+  return outputHtml;
+}
+
+function escapeHtml(text) {
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+async function openTranscriptUploadModal() {
+  const dateInput = document.getElementById("upload-transcript-date");
+  if (dateInput && !dateInput.value) {
+    dateInput.value = new Date().toISOString().split("T")[0];
+  }
+
+  // Populate upload ticker select from entities if not yet populated
+  const sel = document.getElementById("upload-transcript-ticker");
+  if (sel && sel.options.length <= 15) {
+    try {
+      const res = await fetch("/api/entities");
+      const json = await res.json();
+      if (json.status === "success" && json.data) {
+        const currentVal = sel.value;
+        const layerNames = {
+          "L2_HYPERSCALER": "L2 하이퍼스케일러 / 빅테크",
+          "L3_COMPUTE": "L3 컴퓨팅 / AI 가속기",
+          "L4_FOUNDRY": "L4 파운드리 / 반도체 장비",
+          "L5_MEMORY": "L5 메모리 / 스토리지",
+          "L6_OPTICAL": "L6 광통신 / AI 네트워킹",
+          "L7_INFRA": "L7 서버 / 랙 인프라",
+          "L8_POWER": "L8 전력 / 에너지 인프라",
+        };
+
+        const grouped = {};
+        for (const e of json.data) {
+          const l = e.layer_code || "ETC";
+          if (!grouped[l]) grouped[l] = [];
+          grouped[l].push(e);
+        }
+
+        let html = "";
+        for (const [l, ents] of Object.entries(grouped)) {
+          html += `<optgroup label="${layerNames[l] || l}">`;
+          for (const ent of ents) {
+            const isSel = ent.ticker === currentVal ? "selected" : "";
+            html += `<option value="${ent.ticker}" ${isSel}>${ent.ticker} — ${ent.name_ko} (${ent.name_en})</option>`;
+          }
+          html += `</optgroup>`;
+        }
+        sel.innerHTML = html;
+        if (currentVal) sel.value = currentVal;
+      }
+    } catch (e) {
+      console.warn("Could not load entities for upload dropdown:", e);
+    }
+  }
+
+  const modal = document.getElementById("transcript-upload-modal");
+  if (modal) modal.classList.add("active");
+}
+
+async function submitTranscriptUpload(e) {
+  e.preventDefault();
+
+  const ticker = document.getElementById("upload-transcript-ticker").value;
+  const fy = parseInt(document.getElementById("upload-transcript-fy").value, 10);
+  const fq = document.getElementById("upload-transcript-fq").value;
+  const callDate = document.getElementById("upload-transcript-date").value;
+  const sourceUrl = document.getElementById("upload-transcript-url").value.trim();
+  const transcriptText = document.getElementById("upload-transcript-text").value.trim();
+
+  if (!ticker || !fy || !fq || !callDate || !transcriptText) {
+    alert("필수 입력 항목을 모두 채워주세요.");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/earning-calls", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker,
+        fiscal_year: fy,
+        fiscal_quarter: fq,
+        call_date: callDate,
+        source_url: sourceUrl || null,
+        transcript_text: transcriptText
+      })
+    });
+
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ 어닝콜 트랜스크립트가 성공적으로 등록되었습니다! (ID: ${json.call_id}, ${json.char_count.toLocaleString()}자)`);
+      closeModal("transcript-upload-modal");
+      document.getElementById("transcript-upload-form").reset();
+      await loadTranscriptsList();
+      selectTranscript(json.call_id);
+    } else {
+      alert(`등록 실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`통신 오류: ${err.message}`);
+  }
+}
+
+async function seedTranscriptsData() {
+  try {
+    const res = await fetch("/api/earning-calls/seed", { method: "POST" });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ 어닝콜 샘플 트랜스크립트(${json.seeded_count}건)가 적재되었습니다!`);
+      loadTranscriptsList();
+    } else {
+      alert(`실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  }
+}

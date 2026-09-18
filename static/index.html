@@ -38,6 +38,9 @@
       <button class="nav-tab-btn" id="btn-tab-quarterly" onclick="switchTab('tab-quarterly')">
         <span>📈</span> 분기 실적(10-Q)
       </button>
+      <button class="nav-tab-btn" id="btn-tab-transcripts" onclick="switchTab('tab-transcripts')">
+        <span>📞</span> 어닝콜
+      </button>
       <button class="nav-tab-btn" id="btn-tab-indicators" onclick="switchTab('tab-indicators')">
         <span>🌐</span> 선행지표
       </button>
@@ -51,6 +54,10 @@
       <div class="search-box">
         <span class="search-icon">🔍</span>
         <input type="text" id="global-search" class="search-input" placeholder="기업, 티커 검색..." oninput="handleGlobalSearch(this.value)">
+      </div>
+      <div class="date-badge" style="font-size: 0.8rem; font-weight: 600; color: var(--accent-cyan); background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); padding: 0.35rem 0.75rem; border-radius: 9999px; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap;">
+        <span>📅</span>
+        <span id="today-date-display">2026-09-18 (금)</span>
       </div>
       <div class="status-pill">
         <span class="status-dot"></span>
@@ -351,14 +358,55 @@
         </div>
         <div style="display: flex; gap: 0.6rem; align-items: center;">
           <label style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 600;">기업 선택:</label>
-          <select id="quarterly-ticker-select" class="btn" style="min-width: 180px; font-weight: 700; color: var(--accent-cyan);" onchange="loadQuarterlyFinancials(this.value)">
-            <option value="NVDA" selected>NVDA (엔비디아)</option>
-            <option value="TSM">TSM (TSMC)</option>
-            <option value="MSFT">MSFT (마이크로소프트)</option>
-            <option value="GOOGL">GOOGL (알파벳)</option>
-            <option value="AMD">AMD (AMD)</option>
-            <option value="AMZN">AMZN (아마존)</option>
-            <option value="META">META (메타)</option>
+          <select id="quarterly-ticker-select" class="btn" style="min-width: 240px; font-weight: 700; color: var(--accent-cyan); background: var(--bg-card);" onchange="loadQuarterlyFinancials(this.value)">
+            <optgroup label="L3 컴퓨팅 / AI 가속기 (5개사)">
+              <option value="NVDA" selected>NVDA (엔비디아)</option>
+              <option value="AMD">AMD (AMD)</option>
+              <option value="AVGO">AVGO (브로드컴)</option>
+              <option value="ARM">ARM (Arm)</option>
+              <option value="INTC">INTC (인텔)</option>
+            </optgroup>
+            <optgroup label="L2 하이퍼스케일러 (7개사)">
+              <option value="MSFT">MSFT (마이크로소프트)</option>
+              <option value="GOOGL">GOOGL (구글/알파벳)</option>
+              <option value="AMZN">AMZN (아마존)</option>
+              <option value="META">META (메타)</option>
+              <option value="ORCL">ORCL (오라클)</option>
+              <option value="CRWV">CRWV (코어위브)</option>
+              <option value="NBIS">NBIS (네비우스)</option>
+            </optgroup>
+            <optgroup label="L4 파운드리 / 반도체 장비 (7개사)">
+              <option value="TSM">TSM (TSMC)</option>
+              <option value="ASML">ASML (ASML)</option>
+              <option value="AMAT">AMAT (어플라이드 머티어리얼즈)</option>
+              <option value="LRCX">LRCX (램리서치)</option>
+              <option value="KLAC">KLAC (KLA)</option>
+              <option value="ASX">ASX (ASE 日月光)</option>
+              <option value="AMKR">AMKR (앰코 테크놀로지)</option>
+            </optgroup>
+            <optgroup label="L5 메모리 / 스토리지 (5개사)">
+              <option value="000660.KS">000660.KS (SK하이닉스)</option>
+              <option value="005930.KS">005930.KS (삼성전자)</option>
+              <option value="MU">MU (마이크론 테크놀로지)</option>
+              <option value="WDC">WDC (웨스턴 디지털)</option>
+              <option value="6600.T">6600.T (키옥시아)</option>
+            </optgroup>
+            <optgroup label="L6 광통신 / 네트워킹 (3개사)">
+              <option value="ANET">ANET (아리스타 네트웍스)</option>
+              <option value="MRVL">MRVL (마벨 테크놀로지)</option>
+              <option value="COHR">COHR (코히어런트)</option>
+            </optgroup>
+            <optgroup label="L7 인프라 / 특수 (3개사)">
+              <option value="AAPL">AAPL (애플)</option>
+              <option value="9984.T">9984.T (소프트뱅크 그룹)</option>
+              <option value="SPACEX">SPACEX (스페이스X / xAI)</option>
+            </optgroup>
+            <optgroup label="L8 전력 / 에너지 인프라 (4개사)">
+              <option value="VRT">VRT (버티브 홀딩스)</option>
+              <option value="ETN">ETN (이튼)</option>
+              <option value="GEV">GEV (GE 버노바)</option>
+              <option value="SBGSF">SBGSF (슈나이더 일렉트릭)</option>
+            </optgroup>
           </select>
           <button class="btn" onclick="seedQuarterlyFinancialsData()">🔄 2020~ 실적 시드 로드</button>
         </div>
@@ -427,16 +475,17 @@
                 <th style="text-align: left;">분기</th>
                 <th>보고서</th>
                 <th style="text-align: center;">실적발표일</th>
-                <th style="text-align: right;">매출액 (YoY)</th>
+                <th style="text-align: right;">매출액 (원통화 / YoY)</th>
                 <th style="text-align: right;">영업이익 (OPM)</th>
                 <th style="text-align: right;">순이익</th>
                 <th style="text-align: right;">설비투자(CapEx)</th>
                 <th style="text-align: right;">데이터센터 매출 (비중)</th>
+                <th style="text-align: center;">적용 환율 (FX)</th>
                 <th style="text-align: center;">공시 원문</th>
               </tr>
             </thead>
             <tbody id="quarterly-financial-tbody">
-              <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">분기 실적 데이터를 불러오는 중...</td></tr>
+              <tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 2rem;">분기 실적 데이터를 불러오는 중...</td></tr>
             </tbody>
           </table>
         </div>
@@ -450,6 +499,96 @@
         </div>
         <div style="font-size: 0.88rem; line-height: 1.7; color: var(--text-secondary); background: rgba(0,0,0,0.25); padding: 1rem; border-radius: var(--radius-sm);" id="mda-panel-content">
           Blackwell 아키텍처 대량 양산 및 출하 본격화. 데이터센터 매출 89% 비중으로 사상 최대 기록.
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. TRANSCRIPTS TAB -->
+    <section id="tab-transcripts" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>📞</span> 어닝콜 트랜스크립트 (Earnings Call Transcripts)</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">
+            경영진 공식 발표문(Prepared Remarks)과 월가 애널리스트 질의응답(Q&A) 전문 열람 및 AI 밸류체인 핵심 발언을 분석합니다.
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.6rem;">
+          <button class="btn btn-primary" onclick="openTranscriptUploadModal()">+ 어닝콜 등록/붙여넣기</button>
+          <button class="btn" onclick="seedTranscriptsData()">🔄 샘플 시드 동기화</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary Bar -->
+      <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 1.25rem;">
+        <div class="kpi-card">
+          <div class="kpi-label"><span>수집된 어닝콜</span><span>📚</span></div>
+          <div class="kpi-value" id="transcript-kpi-total" style="color: var(--accent-cyan);">-</div>
+          <div class="kpi-sub">총 보관 전문 건수</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>대상 기업 수</span><span>🏢</span></div>
+          <div class="kpi-value" id="transcript-kpi-companies">-</div>
+          <div class="kpi-sub">트랜스크립트 보유 기업</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>최신 어닝콜 일자</span><span>📅</span></div>
+          <div class="kpi-value" id="transcript-kpi-latest" style="font-size: 1.25rem;">-</div>
+          <div class="kpi-sub">가장 최근 실적발표회</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>Q&A 세션 분리</span><span>💬</span></div>
+          <div class="kpi-value" style="color: var(--accent-emerald);">100% 지원</div>
+          <div class="kpi-sub">발표문 vs 질의응답 필터링</div>
+        </div>
+      </div>
+
+      <!-- Transcripts 2-Column Split Workspace -->
+      <div class="transcripts-layout">
+        <!-- Left Sidebar: Filter & List Cards -->
+        <div class="transcript-sidebar">
+          <div style="display: flex; gap: 0.5rem;">
+            <select id="transcript-filter-ticker" class="btn" style="width: 100%; font-weight: 600; color: var(--accent-cyan); background: var(--bg-card);" onchange="filterTranscriptsList()">
+              <option value="">전체 기업 보기</option>
+              <option value="NVDA">NVDA (엔비디아)</option>
+              <option value="000660.KS">000660.KS (SK하이닉스)</option>
+              <option value="MSFT">MSFT (마이크로소프트)</option>
+              <option value="AVGO">AVGO (브로드컴)</option>
+            </select>
+          </div>
+          <div class="search-box" style="width: 100%;">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="transcript-search-input" class="search-input" style="width: 100%;" placeholder="키워드/경영진/분기 검색..." oninput="filterTranscriptsList()">
+          </div>
+
+          <div class="transcript-list-container" id="transcript-cards-list">
+            <div style="text-align: center; color: var(--text-muted); padding: 2rem;">트랜스크립트 목록을 불러오는 중...</div>
+          </div>
+        </div>
+
+        <!-- Right Main Reader: Full text & Session Explorer -->
+        <div class="transcript-main-pane">
+          <!-- Reader Top Action Header -->
+          <div class="glass-panel" style="padding: 0.9rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+              <span id="reader-company-badge" class="filing-badge" style="font-size: 0.9rem; padding: 0.25rem 0.6rem; background: rgba(99,102,241,0.2); color: #A5B4FC; border: 1px solid rgba(99,102,241,0.4);">NVDA</span>
+              <h3 id="reader-title" style="font-size: 1.05rem; color: #fff; margin: 0;">2026-Q2 실적발표 컨퍼런스 콜</h3>
+              <span id="reader-date" style="font-size: 0.82rem; color: var(--text-muted);">2026-08-27</span>
+              <span id="reader-words" class="status-pill" style="font-size: 0.75rem;">약 4,600자</span>
+              <a id="reader-source-link" href="#" target="_blank" class="btn" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; display: none;">🔗 원문 링크</a>
+            </div>
+
+            <!-- View Modes Pills -->
+            <div class="layer-pills" id="transcript-section-pills">
+              <button class="layer-pill active" id="pill-section-all" onclick="setTranscriptSectionView('all')">📑 전체 보기</button>
+              <button class="layer-pill" id="pill-section-remarks" onclick="setTranscriptSectionView('remarks')">🎙️ 경영진 발표</button>
+              <button class="layer-pill" id="pill-section-qa" onclick="setTranscriptSectionView('qa')">💬 질의응답 (Q&A)</button>
+            </div>
+          </div>
+
+          <!-- Reader Content Box -->
+          <div class="transcript-reader-box" id="transcript-reader-body">
+            <div style="text-align: center; color: var(--text-muted); padding: 4rem;">좌측 목록에서 어닝콜을 선택하세요.</div>
+          </div>
         </div>
       </div>
     </section>
@@ -471,31 +610,40 @@
       <div style="margin-bottom: 2rem;">
         <div class="section-header" style="margin-bottom: 0.8rem;">
           <h3 class="section-title" style="font-size: 1.1rem;"><span>💾</span> DRAM & NAND 메모리 반도체 현물 가격 (Spot Price)</h3>
-          <span style="font-size: 0.78rem; color: var(--text-muted);">업데이트: 주간 (TrendForce / DRAMeXchange 기준)</span>
+          <span style="font-size: 0.78rem; color: var(--accent-cyan);">최종 업데이트: 2026년 9월 18일 14:40 (DRAMeXchange / DGI 실시간)</span>
         </div>
 
-        <!-- 4 Key Spot Price Cards -->
-        <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 1.2rem;" id="memory-spot-kpi-grid">
-          <!-- Rendered by JS -->
-          <div class="kpi-card" id="card-spot-ddr5">
-            <div class="kpi-label"><span>DDR5 16Gb (스팟)</span><span class="layer-tag L3">DRAM</span></div>
-            <div class="kpi-value" id="val-spot-ddr5">$5.85</div>
-            <div class="kpi-sub" id="sub-spot-ddr5" style="color: var(--accent-emerald);">▲ +1.2% (전주 대비)</div>
+        <!-- 5 Key Spot Price Cards matching real quotation -->
+        <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 1.2rem;" id="memory-spot-kpi-grid">
+          <div class="kpi-card" id="card-spot-ddr5" onclick="switchSpotChart('SPOT_DRAM_DDR5_16GB')" style="cursor: pointer;">
+            <div class="kpi-label"><span>DDR5 16GB (모듈)</span><span class="layer-tag L3">DRAM</span></div>
+            <div class="kpi-value" id="val-spot-ddr5">$56.00</div>
+            <div class="kpi-sub" id="sub-spot-ddr5" style="color: var(--accent-emerald);">▲ +1.39% (세션 변동)</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $40.80 ~ $67.00</div>
           </div>
-          <div class="kpi-card" id="card-spot-ddr4">
-            <div class="kpi-label"><span>DDR4 8Gb (스팟)</span><span class="layer-tag L3">DRAM</span></div>
-            <div class="kpi-value" id="val-spot-ddr4">$1.82</div>
-            <div class="kpi-sub" id="sub-spot-ddr4" style="color: var(--accent-emerald);">▲ +1.1% (전주 대비)</div>
+          <div class="kpi-card" id="card-spot-ddr5-chip" onclick="switchSpotChart('SPOT_DRAM_DDR5_16GB_CHIP')" style="cursor: pointer;">
+            <div class="kpi-label"><span>DDR5 16Gb (칩/eTT)</span><span class="layer-tag L3">DRAM</span></div>
+            <div class="kpi-value" id="val-spot-ddr5-chip">$24.60</div>
+            <div class="kpi-sub" id="sub-spot-ddr5-chip" style="color: var(--accent-emerald);">▲ +0.41% (세션 변동)</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $23.50 ~ $25.60</div>
           </div>
-          <div class="kpi-card" id="card-spot-nand">
-            <div class="kpi-label"><span>NAND 512Gb TLC (스팟)</span><span class="layer-tag L3">NAND</span></div>
-            <div class="kpi-value" id="val-spot-nand">$4.25</div>
-            <div class="kpi-sub" id="sub-spot-nand" style="color: var(--accent-emerald);">▲ +1.2% (전주 대비)</div>
+          <div class="kpi-card" id="card-spot-ddr4" onclick="switchSpotChart('SPOT_DRAM_DDR4_8GB')" style="cursor: pointer;">
+            <div class="kpi-label"><span>DDR4 16Gb (칩/eTT)</span><span class="layer-tag L3">DRAM</span></div>
+            <div class="kpi-value" id="val-spot-ddr4">$13.23</div>
+            <div class="kpi-sub" id="sub-spot-ddr4" style="color: var(--accent-emerald);">▲ +1.34% (세션 변동)</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $12.80 ~ $14.20</div>
           </div>
-          <div class="kpi-card" id="card-spot-dxi">
-            <div class="kpi-label"><span>DXI 지수 (종합)</span><span class="layer-tag L1">INDEX</span></div>
+          <div class="kpi-card" id="card-spot-ddr4-mod" onclick="switchSpotChart('SPOT_DRAM_DDR4_16GB')" style="cursor: pointer;">
+            <div class="kpi-label"><span>DDR4 16GB (모듈)</span><span class="layer-tag L3">DRAM</span></div>
+            <div class="kpi-value" id="val-spot-ddr4-mod">$85.75</div>
+            <div class="kpi-sub" id="sub-spot-ddr4-mod" style="color: var(--accent-emerald);">▲ +0.29% (세션 변동)</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $45.00 ~ $120.00</div>
+          </div>
+          <div class="kpi-card" id="card-spot-dxi" onclick="switchSpotChart('INDEX_DXI')" style="cursor: pointer;">
+            <div class="kpi-label"><span>DXI 종합 지수</span><span class="layer-tag L1">INDEX</span></div>
             <div class="kpi-value" id="val-spot-dxi">39,500</div>
-            <div class="kpi-sub" id="sub-spot-dxi" style="color: var(--accent-emerald);">▲ +1.0% (전주 대비)</div>
+            <div class="kpi-sub" id="sub-spot-dxi" style="color: var(--accent-emerald);">▲ +1.02% (전주 대비)</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">DRAM 종합 업황 지수</div>
           </div>
         </div>
 
@@ -503,12 +651,14 @@
         <div class="glass-panel">
           <div class="section-header">
             <div style="display: flex; align-items: center; gap: 0.8rem;">
-              <h3 class="section-title" style="font-size: 1.05rem;" id="spot-chart-title"><span>📈</span> DDR5 16Gb 스팟 현물 가격 추이 (USD)</h3>
+              <h3 class="section-title" style="font-size: 1.05rem;" id="spot-chart-title"><span>📈</span> DDR5 16GB 모듈 스팟 현물 가격 추이 (USD)</h3>
             </div>
             <!-- Pill Selector for Spot Indicator -->
             <div class="layer-pills" id="spot-indicator-selector">
-              <button class="layer-pill active" onclick="switchSpotChart('SPOT_DRAM_DDR5_16GB')">DDR5 16Gb</button>
-              <button class="layer-pill" onclick="switchSpotChart('SPOT_DRAM_DDR4_8GB')">DDR4 8Gb</button>
+              <button class="layer-pill active" onclick="switchSpotChart('SPOT_DRAM_DDR5_16GB')">DDR5 16GB 모듈</button>
+              <button class="layer-pill" onclick="switchSpotChart('SPOT_DRAM_DDR5_16GB_CHIP')">DDR5 16Gb eTT</button>
+              <button class="layer-pill" onclick="switchSpotChart('SPOT_DRAM_DDR4_8GB')">DDR4 16Gb eTT</button>
+              <button class="layer-pill" onclick="switchSpotChart('SPOT_DRAM_DDR4_16GB')">DDR4 16GB 모듈</button>
               <button class="layer-pill" onclick="switchSpotChart('SPOT_NAND_TLC_512GB')">NAND 512Gb</button>
               <button class="layer-pill" onclick="switchSpotChart('INDEX_DXI')">DXI 종합지수</button>
             </div>
@@ -885,6 +1035,69 @@
         </div>
 
         <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">💾 컨센서스 저장 및 계산</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Earnings Call Upload Modal -->
+  <div class="modal-overlay" id="transcript-upload-modal" onclick="closeModalOnOverlay(event, 'transcript-upload-modal')">
+    <div class="modal-container" style="max-width: 650px;">
+      <button class="modal-close" onclick="closeModal('transcript-upload-modal')">✕</button>
+      <h3 style="font-size: 1.25rem; color: #fff; margin-bottom: 0.4rem;">📞 어닝콜 트랜스크립트 등록 및 붙여넣기</h3>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.2rem;">어닝콜 전문 텍스트를 붙여넣으면 경영진 발표문(Remarks)과 Q&A 세션이 자동 구분되어 저장됩니다.</p>
+
+      <form id="transcript-upload-form" onsubmit="submitTranscriptUpload(event)">
+        <div style="display: flex; gap: 0.6rem; margin-bottom: 0.8rem;">
+          <div style="flex: 2;">
+            <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">기업 (티커) *</label>
+            <select id="upload-transcript-ticker" class="btn" style="width: 100%;" required>
+              <option value="NVDA">NVDA — NVIDIA</option>
+              <option value="000660.KS">000660.KS — SK하이닉스</option>
+              <option value="005930.KS">005930.KS — 삼성전자</option>
+              <option value="MSFT">MSFT — 마이크로소프트</option>
+              <option value="AVGO">AVGO — 브로드컴</option>
+              <option value="TSM">TSM — TSMC</option>
+              <option value="GOOGL">GOOGL — 알파벳/구글</option>
+              <option value="AMZN">AMZN — 아마존</option>
+              <option value="META">META — 메타</option>
+              <option value="AMD">AMD — AMD</option>
+              <option value="MU">MU — 마이크론</option>
+              <option value="AAPL">AAPL — 애플</option>
+              <option value="ASML">ASML — ASML</option>
+            </select>
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">회계연도 *</label>
+            <input type="number" id="upload-transcript-fy" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" value="2026" min="2020" max="2030" required>
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">분기 *</label>
+            <select id="upload-transcript-fq" class="btn" style="width: 100%;">
+              <option value="Q1">Q1</option>
+              <option value="Q2" selected>Q2</option>
+              <option value="Q3">Q3</option>
+              <option value="Q4">Q4</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.6rem; margin-bottom: 0.8rem;">
+          <div style="flex: 1;">
+            <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">컨퍼런스 콜 일자 *</label>
+            <input type="date" id="upload-transcript-date" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" required>
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">출처 URL (선택)</label>
+            <input type="url" id="upload-transcript-url" class="search-input" style="width: 100%; border-radius: var(--radius-sm); padding-left: 0.8rem;" placeholder="https://...">
+          </div>
+        </div>
+
+        <div style="margin-bottom: 1.2rem;">
+          <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">트랜스크립트 전문 텍스트 (Transcript Text) *</label>
+          <textarea id="upload-transcript-text" class="search-input" style="width: 100%; height: 220px; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.6; border-radius: var(--radius-sm); padding: 0.8rem; resize: vertical;" placeholder="어닝콜 전문 텍스트를 붙여넣으세요. (경영진 발표문 및 'QUESTION AND ANSWER' 또는 '질의응답' 포함 권장)" required></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">💾 트랜스크립트 저장 및 자동 섹션 파싱</button>
       </form>
     </div>
   </div>

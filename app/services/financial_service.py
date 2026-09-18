@@ -9,6 +9,20 @@ from app.models.database import get_db, query_db
 
 class FinancialService:
 
+    @staticmethod
+    def get_ticker_fx_info(ticker: str) -> Dict[str, Any]:
+        """Return original reporting currency and FX conversion rate to USD."""
+        if ticker in ("005930.KS", "000660.KS"):
+            return {"currency": "KRW", "fx_rate": 1350.0, "symbol": "₩", "label": "₩1,350/$ (KRW)"}
+        elif ticker in ("6600.T", "9984.T"):
+            return {"currency": "JPY", "fx_rate": 155.0, "symbol": "¥", "label": "¥155/$ (JPY)"}
+        elif ticker in ("ASML", "SBGSF"):
+            return {"currency": "EUR", "fx_rate": 0.92, "symbol": "€", "label": "€0.92/$ (EUR)"}
+        elif ticker in ("TSM", "ASX"):
+            return {"currency": "TWD", "fx_rate": 32.0, "symbol": "NT$", "label": "NT$32/$ (TWD)"}
+        else:
+            return {"currency": "USD", "fx_rate": 1.0, "symbol": "$", "label": "USD (기준)"}
+
     def record_metric(
         self,
         ticker: str,
@@ -17,7 +31,9 @@ class FinancialService:
         metric_type: str,
         value: float,
         filing_id: Optional[int] = None,
-        source: str = "AUTO"
+        source: str = "AUTO",
+        fx_rate: float = 1.0,
+        original_currency: str = "USD"
     ) -> Dict[str, Any]:
         """Insert or update a single financial metric."""
         entity = query_db("SELECT id FROM entity WHERE ticker = ?", (ticker,), one=True)
@@ -29,12 +45,12 @@ class FinancialService:
             cur.execute(
                 """
                 INSERT INTO financial_metric (
-                    entity_id, fiscal_year, fiscal_quarter, metric_type, value, filing_id, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    entity_id, fiscal_year, fiscal_quarter, metric_type, value, filing_id, source, fx_rate, original_currency
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(entity_id, fiscal_year, fiscal_quarter, metric_type)
-                DO UPDATE SET value=excluded.value, filing_id=excluded.filing_id, source=excluded.source
+                DO UPDATE SET value=excluded.value, filing_id=excluded.filing_id, source=excluded.source, fx_rate=excluded.fx_rate, original_currency=excluded.original_currency
                 """,
-                (entity["id"], str(fiscal_year), fiscal_quarter.upper(), metric_type.lower(), float(value), filing_id, source)
+                (entity["id"], str(fiscal_year), fiscal_quarter.upper(), metric_type.lower(), float(value), filing_id, source, fx_rate, original_currency)
             )
 
         return {"status": "success", "ticker": ticker, "metric": metric_type, "value": value}
@@ -101,6 +117,7 @@ class FinancialService:
         # Sort quarters chronologically
         sorted_keys = sorted(grouped.keys(), reverse=True)
         series = []
+        fx_info = self.get_ticker_fx_info(ticker)
 
         for k in sorted_keys:
             item = grouped[k]
@@ -119,9 +136,10 @@ class FinancialService:
             f_info = filing_map.get(k, {})
 
             # Earnings release date (실적발표일)
+            fy_end = entity.get("fiscal_year_end") if entity else "12"
             rel_date = (
                 f_info.get("filed_date")
-                or self._get_default_release_date(ticker, item["fiscal_year"], item["fiscal_quarter"])
+                or self._get_default_release_date(ticker, item["fiscal_year"], item["fiscal_quarter"], fy_end)
             )
 
             # YoY calculation if prior year same quarter exists
@@ -129,6 +147,25 @@ class FinancialService:
             prior_k = f"{yr - 1}-{item['fiscal_quarter']}"
             prior_rev = grouped.get(prior_k, {}).get("metrics", {}).get("revenue")
             rev_yoy = round(((rev - prior_rev) / prior_rev * 100), 1) if rev and prior_rev else None
+
+            default_ftype = "10-K" if item["fiscal_quarter"] == "Q4" else "10-Q"
+            if ticker in ("TSM", "ASML", "ARM", "ASX") and item["fiscal_quarter"] == "Q4":
+                default_ftype = "20-F"
+
+            # Original currency display string (e.g. KRW 조원, JPY 조엔, EUR)
+            orig_rev_str = None
+            if fx_info["currency"] == "KRW" and rev:
+                rev_krw_tril = (rev * fx_info["fx_rate"]) / 1_000_000
+                orig_rev_str = f"약 {rev_krw_tril:.1f}조원"
+            elif fx_info["currency"] == "JPY" and rev:
+                rev_jpy_tril = (rev * fx_info["fx_rate"]) / 1_000_000
+                orig_rev_str = f"약 {rev_jpy_tril:.1f}조엔"
+            elif fx_info["currency"] == "EUR" and rev:
+                rev_eur_b = (rev * fx_info["fx_rate"]) / 1_000
+                orig_rev_str = f"€{rev_eur_b:.1f}B"
+            elif fx_info["currency"] == "TWD" and rev:
+                rev_twd_b = (rev * fx_info["fx_rate"]) / 1_000
+                orig_rev_str = f"NT${rev_twd_b:.0f}B"
 
             series.append({
                 "period": k,
@@ -147,27 +184,51 @@ class FinancialService:
                 "segment_datacenter_ratio": dc_ratio,
                 "segment_gaming": gaming_rev,
                 "filing_id": f_info.get("id"),
-                "filing_type": f_info.get("filing_type", "10-Q"),
+                "filing_type": f_info.get("filing_type", default_ftype),
                 "report_date": rel_date,
                 "filed_date": rel_date,
                 "accession_number": f_info.get("accession_number"),
-                "mda_summary": self._get_default_mda_note(ticker, k)
+                "mda_summary": self._get_default_mda_note(ticker, k),
+                "fx_rate": fx_info["fx_rate"],
+                "fx_rate_label": fx_info["label"],
+                "original_currency": fx_info["currency"],
+                "original_revenue_str": orig_rev_str
             })
 
         return {
             "status": "success",
             "ticker": ticker,
-            "entity": entity,
+            "entity": dict(entity) if entity else {},
+            "fx_info": fx_info,
             "count": len(series),
             "series": series
         }
 
-    def _get_default_release_date(self, ticker: str, fiscal_year: str, fiscal_quarter: str) -> Optional[str]:
+    def _get_default_release_date(
+        self, ticker: str, fiscal_year: str, fiscal_quarter: str, fiscal_year_end: Optional[str] = None
+    ) -> Optional[str]:
         """
         Return the historical earnings release date (실적발표일) for key tech leaders,
-        or estimate based on typical corporate earnings release schedules.
+        or estimate accurately based on entity's fiscal year end and corporate schedule.
         """
         known_dates = {
+            "AVGO": {
+                "2026-Q3": "2026-09-10",
+                "2026-Q2": "2026-06-09",
+                "2026-Q1": "2026-03-11",
+                "2025-Q4": "2025-12-18",
+                "2025-Q3": "2025-09-10",
+                "2025-Q2": "2025-06-11",
+                "2025-Q1": "2025-03-12",
+                "2024-Q4": "2024-12-20",
+                "2024-Q3": "2024-09-05",
+                "2024-Q2": "2024-06-12",
+                "2024-Q1": "2024-03-07",
+                "2023-Q4": "2023-12-14",
+                "2022-Q4": "2022-12-16",
+                "2021-Q4": "2021-12-17",
+                "2020-Q4": "2020-12-18",
+            },
             "NVDA": {
                 "2026-Q2": "2026-08-26",
                 "2026-Q1": "2026-05-20",
@@ -196,55 +257,328 @@ class FinancialService:
                 "2020-Q2": "2020-08-19",
                 "2020-Q1": "2020-05-21",
             },
+            "AAPL": {
+                "2026-Q3": "2026-08-01",
+                "2026-Q2": "2026-05-02",
+                "2026-Q1": "2026-01-30",
+                "2025-Q4": "2025-10-30",
+                "2025-Q3": "2025-07-31",
+                "2025-Q2": "2025-05-01",
+                "2025-Q1": "2025-01-30",
+                "2024-Q4": "2024-10-31",
+                "2024-Q3": "2024-08-01",
+                "2024-Q2": "2024-05-02",
+                "2024-Q1": "2024-02-01",
+                "2023-Q4": "2023-11-02",
+                "2023-Q3": "2023-08-03",
+                "2023-Q2": "2023-05-04",
+                "2023-Q1": "2023-02-02",
+                "2022-Q4": "2022-10-27",
+                "2022-Q3": "2022-07-28",
+                "2022-Q2": "2022-04-28",
+                "2022-Q1": "2022-01-27",
+                "2021-Q4": "2021-10-28",
+                "2021-Q3": "2021-07-27",
+                "2021-Q2": "2021-04-28",
+                "2021-Q1": "2021-01-27",
+                "2020-Q4": "2020-10-29",
+                "2020-Q3": "2020-07-30",
+                "2020-Q2": "2020-04-30",
+                "2020-Q1": "2020-01-28",
+            },
+            "MSFT": {
+                "2026-Q4": "2026-07-30",
+                "2026-Q3": "2026-04-25",
+                "2026-Q2": "2026-01-30",
+                "2026-Q1": "2025-10-24",
+                "2025-Q4": "2025-07-29",
+                "2025-Q3": "2025-04-24",
+                "2025-Q2": "2025-01-28",
+                "2025-Q1": "2024-10-30",
+                "2024-Q4": "2024-07-30",
+                "2024-Q3": "2024-04-25",
+                "2024-Q2": "2024-01-30",
+                "2024-Q1": "2023-10-24",
+                "2023-Q4": "2023-07-25",
+                "2023-Q3": "2023-04-25",
+                "2023-Q2": "2023-01-24",
+                "2023-Q1": "2022-10-25",
+                "2022-Q4": "2022-07-26",
+                "2022-Q3": "2022-04-26",
+                "2022-Q2": "2022-01-25",
+                "2022-Q1": "2021-10-26",
+                "2021-Q4": "2021-07-27",
+                "2021-Q3": "2021-04-27",
+                "2021-Q2": "2021-01-26",
+                "2021-Q1": "2020-10-27",
+                "2020-Q4": "2020-07-22",
+                "2020-Q3": "2020-04-29",
+                "2020-Q2": "2020-01-29",
+                "2020-Q1": "2019-10-23",
+            },
+            "GOOGL": {
+                "2026-Q2": "2026-07-23",
+                "2026-Q1": "2026-04-25",
+                "2025-Q4": "2026-02-04",
+                "2025-Q3": "2025-10-29",
+                "2025-Q2": "2025-07-23",
+                "2025-Q1": "2025-04-24",
+                "2024-Q4": "2025-02-04",
+                "2024-Q3": "2024-10-29",
+                "2024-Q2": "2024-07-23",
+                "2024-Q1": "2024-04-25",
+                "2023-Q4": "2024-01-30",
+                "2023-Q3": "2023-10-24",
+                "2023-Q2": "2023-07-25",
+                "2023-Q1": "2023-04-25",
+                "2022-Q4": "2023-02-02",
+                "2022-Q3": "2022-10-25",
+                "2022-Q2": "2022-07-26",
+                "2022-Q1": "2022-04-26",
+                "2021-Q4": "2022-02-01",
+                "2021-Q3": "2021-10-26",
+                "2021-Q2": "2021-07-27",
+                "2021-Q1": "2021-04-27",
+                "2020-Q4": "2021-02-02",
+                "2020-Q3": "2020-10-29",
+                "2020-Q2": "2020-07-30",
+                "2020-Q1": "2020-04-28",
+            },
+            "AMZN": {
+                "2026-Q2": "2026-07-30",
+                "2026-Q1": "2026-04-30",
+                "2025-Q4": "2026-02-06",
+                "2025-Q3": "2025-10-30",
+                "2025-Q2": "2025-08-01",
+                "2025-Q1": "2025-04-29",
+                "2024-Q4": "2025-02-06",
+                "2024-Q3": "2024-10-31",
+                "2024-Q2": "2024-08-01",
+                "2024-Q1": "2024-04-30",
+                "2023-Q4": "2024-02-01",
+                "2023-Q3": "2023-10-26",
+                "2023-Q2": "2023-08-03",
+                "2023-Q1": "2023-04-27",
+            },
+            "META": {
+                "2026-Q2": "2026-07-30",
+                "2026-Q1": "2026-04-29",
+                "2025-Q4": "2026-02-05",
+                "2025-Q3": "2025-10-29",
+                "2025-Q2": "2025-07-30",
+                "2025-Q1": "2025-04-30",
+                "2024-Q4": "2025-02-05",
+                "2024-Q3": "2024-10-30",
+                "2024-Q2": "2024-07-31",
+                "2024-Q1": "2024-04-24",
+                "2023-Q4": "2024-02-01",
+                "2023-Q3": "2023-10-25",
+                "2023-Q2": "2023-07-26",
+                "2023-Q1": "2023-04-26",
+            },
             "TSM": {
                 "2026-Q2": "2026-07-16",
                 "2026-Q1": "2026-04-16",
                 "2025-Q4": "2026-01-15",
                 "2025-Q3": "2025-10-16",
+                "2025-Q2": "2025-07-17",
+                "2025-Q1": "2025-04-17",
                 "2024-Q4": "2025-01-16",
+                "2024-Q3": "2024-10-17",
+                "2024-Q2": "2024-07-18",
+                "2024-Q1": "2024-04-18",
                 "2023-Q4": "2024-01-18",
                 "2022-Q4": "2023-01-12",
                 "2021-Q4": "2022-01-13",
                 "2020-Q4": "2021-01-14",
             },
-            "MSFT": {
-                "2026-Q4": "2026-07-30",
-                "2026-Q3": "2026-04-25",
-                "2025-Q4": "2025-07-29",
-                "2024-Q4": "2024-07-30",
-                "2023-Q4": "2023-07-25",
-                "2022-Q4": "2022-07-26",
-                "2021-Q4": "2021-07-27",
-                "2020-Q4": "2020-07-22",
+            "MU": {
+                "2026-Q3": "2026-06-26",
+                "2026-Q2": "2026-03-20",
+                "2026-Q1": "2025-12-18",
+                "2025-Q4": "2025-09-25",
+                "2025-Q3": "2025-06-25",
+                "2025-Q2": "2025-03-20",
+                "2025-Q1": "2024-12-18",
+                "2024-Q4": "2024-09-25",
+                "2023-Q4": "2023-09-27",
+                "2022-Q4": "2022-09-29",
+                "2021-Q4": "2021-09-28",
+                "2020-Q4": "2020-09-29",
+            },
+            "AMD": {
+                "2026-Q2": "2026-07-30",
+                "2026-Q1": "2026-04-30",
+                "2025-Q4": "2026-01-28",
+                "2025-Q3": "2025-10-28",
+                "2024-Q4": "2025-01-28",
+                "2023-Q4": "2024-01-30",
+                "2022-Q4": "2023-01-31",
+                "2021-Q4": "2022-02-01",
+                "2020-Q4": "2021-01-26",
+            },
+            "ASML": {
+                "2026-Q2": "2026-07-17",
+                "2026-Q1": "2026-04-17",
+                "2025-Q4": "2026-01-22",
+                "2024-Q4": "2025-01-22",
+                "2023-Q4": "2024-01-24",
+                "2022-Q4": "2023-01-25",
+                "2021-Q4": "2022-01-19",
+                "2020-Q4": "2021-01-20",
+            },
+            "000660.KS": {
+                "2026-Q2": "2026-07-24",
+                "2026-Q1": "2026-04-24",
+                "2025-Q4": "2026-01-23",
+                "2025-Q3": "2025-10-24",
+                "2024-Q4": "2025-01-23",
+            },
+            "005930.KS": {
+                "2026-Q2": "2026-07-31",
+                "2026-Q1": "2026-04-30",
+                "2025-Q4": "2026-01-31",
+                "2025-Q3": "2025-10-31",
+                "2024-Q4": "2025-01-31",
+            },
+            "ORCL": {
+                "2026-Q4": "2026-06-11",
+                "2026-Q3": "2026-03-11",
+                "2026-Q2": "2025-12-10",
+                "2026-Q1": "2025-09-09",
+                "2025-Q4": "2025-06-11",
+                "2024-Q4": "2024-06-11",
+            },
+            "INTC": {
+                "2026-Q2": "2026-07-25",
+                "2026-Q1": "2026-04-25",
+                "2025-Q4": "2026-01-25",
+                "2025-Q3": "2025-10-24",
+                "2024-Q4": "2025-01-25",
+            },
+            "ARM": {
+                "2026-Q1": "2025-07-31",
+                "2025-Q4": "2025-05-08",
+                "2025-Q3": "2025-02-06",
+                "2025-Q2": "2024-11-06",
+                "2025-Q1": "2024-07-31",
             }
         }
         key = f"{fiscal_year}-{fiscal_quarter}"
         if ticker in known_dates and key in known_dates[ticker]:
             return known_dates[ticker][key]
 
-        # Generic seasonal fallback for standard quarters
-        q_defaults = {
-            "Q1": f"{fiscal_year}-04-25",
-            "Q2": f"{fiscal_year}-07-25",
-            "Q3": f"{fiscal_year}-10-25",
-            "Q4": f"{int(fiscal_year) + 1}-01-26" if fiscal_year.isdigit() else f"{fiscal_year}-01-26",
-        }
-        return q_defaults.get(fiscal_quarter)
+        # Dynamic seasonal fallback based on entity's fiscal year end
+        fy = int(fiscal_year) if str(fiscal_year).isdigit() else 2024
+        fy_end = fiscal_year_end or "12"
+
+        if fy_end == "01":  # January (e.g. NVDA, MRVL)
+            defaults = {
+                "Q1": f"{fy}-05-22",
+                "Q2": f"{fy}-08-25",
+                "Q3": f"{fy}-11-20",
+                "Q4": f"{fy + 1}-02-25"
+            }
+        elif fy_end == "03":  # March (e.g. ARM, 6600.T, 9984.T)
+            defaults = {
+                "Q1": f"{fy - 1}-08-08",
+                "Q2": f"{fy - 1}-11-08",
+                "Q3": f"{fy}-02-08",
+                "Q4": f"{fy}-05-08"
+            }
+        elif fy_end == "05":  # May (e.g. ORCL)
+            defaults = {
+                "Q1": f"{fy - 1}-09-12",
+                "Q2": f"{fy - 1}-12-12",
+                "Q3": f"{fy}-03-12",
+                "Q4": f"{fy}-06-12"
+            }
+        elif fy_end == "06":  # June (e.g. MSFT, LRCX, KLAC, WDC, COHR)
+            defaults = {
+                "Q1": f"{fy - 1}-10-25",
+                "Q2": f"{fy}-01-26",
+                "Q3": f"{fy}-04-25",
+                "Q4": f"{fy}-07-26"
+            }
+        elif fy_end == "08":  # August (e.g. MU)
+            defaults = {
+                "Q1": f"{fy - 1}-12-20",
+                "Q2": f"{fy}-03-26",
+                "Q3": f"{fy}-06-26",
+                "Q4": f"{fy}-09-26"
+            }
+        elif fy_end == "09":  # September (e.g. AAPL)
+            defaults = {
+                "Q1": f"{fy}-01-28",
+                "Q2": f"{fy}-04-28",
+                "Q3": f"{fy}-07-28",
+                "Q4": f"{fy}-10-28"
+            }
+        elif fy_end == "10":  # October (e.g. AVGO, AMAT)
+            defaults = {
+                "Q1": f"{fy}-03-11",
+                "Q2": f"{fy}-06-10",
+                "Q3": f"{fy}-09-10",
+                "Q4": f"{fy}-12-18"
+            }
+        else:  # Standard calendar 12 (GOOGL, AMZN, META, TSM, AMD, INTC, ASML, KRX, etc.)
+            defaults = {
+                "Q1": f"{fy}-04-25",
+                "Q2": f"{fy}-07-25",
+                "Q3": f"{fy}-10-25",
+                "Q4": f"{fy + 1}-01-26"
+            }
+        return defaults.get(fiscal_quarter)
 
     def _get_default_mda_note(self, ticker: str, period_key: str) -> str:
         """Provide contextual MD&A executive highlights for key quarters."""
         mda_notes = {
+            "AVGO": {
+                "2026-Q3": "커스텀 AI 가속기(XPU) 및 Tomahawk 5/6 네트워킹 스위치 수요 급증. 분기 AI 반도체 매출 $5.1B(전체 34%) 달성.",
+                "2026-Q2": "하이퍼스케일러 맞춤형 AI ASIC 및 PCIe Gen5/Gen6 스위치 수요 호조. VMware 통합 시너지 가속화.",
+                "2026-Q1": "VMware Cloud Foundation 라이선스 전환 가속화 및 차세대 이더넷 스위치 주문 증가.",
+                "2025-Q4": "생성형 AI 클러스터용 네트워킹 및 맞춤형 AI 가속기 수주 확대로 분기 매출 $13.2B 기록.",
+                "2024-Q4": "VMware 인수 완료 후 소프트웨어 인프라 매출 본격 반영 및 AI 네트워킹 수주 급증.",
+                "2023-Q4": "생성형 AI 인프라 투자 본격화에 따른 네트워킹 및 ASIC 반도체 수주 호조.",
+            },
             "NVDA": {
                 "2026-Q2": "Blackwell 아키텍처 대량 양산 및 출하 본격화. AI 데이터센터(Compute & Networking) 매출 $88.3B(91.8%)로 사상 최대 기록 경신.",
                 "2026-Q1": "차세대 AI 인프라 및 H200 수요 지속 견인. 분기 총매출 $81.6B 돌파, 영업이익률 65.6% 달성.",
                 "2025-Q4": "전세계 엔터프라이즈 및 하이퍼스케일러의 생성형 AI 컴퓨팅 투자 지속 확대로 분기 매출 $68.1B 달성.",
                 "2025-Q3": "Hopper 아키텍처 기반 가속 컴퓨팅 전환 수요 지속 확대. 분기 매출 $57.0B 달성.",
                 "2025-Q2": "생성형 AI 모델 훈련 및 추론 수요 급증. 분기 매출 $46.7B, 데이터센터 부문 114% 성장 달성.",
-                "2025-Q1": "글로벌 CSP들의 대규모 가속 컴퓨팅 투자 지속으로 분기 매출 $44.1B 기록.",
                 "2024-Q4": "Hopper H100 공급 제약 점진적 해소 및 네트워킹(Quantum-X) 부문 세 자릿수 성장 달성.",
-                "2024-Q3": "LLM(대형 언어 모델) 개발 경쟁 본격화에 따른 분기 매출 $35.1B 달성.",
-                "2024-Q2": "Generative AI 티핑 포인트 도달. AI 데이터센터 분기 매출 급증.",
-                "2023-Q4": "ChatGPT 상용화 이후 글로벌 빅테크의 가속 컴퓨팅 전환 본격화."
+            },
+            "AAPL": {
+                "2026-Q3": "Apple Intelligence 글로벌 탑재 확대 및 서비스(Services) 부문 사상 최대 분기 매출 경신.",
+                "2026-Q2": "Mac/iPad 신제품 라인업 호조 및 온디바이스 AI 채택률 가속화로 분기 매출 $90.8B 달성.",
+                "2026-Q1": "iPhone 17 시리즈 역대급 홀리데이 흥행. 분기 매출 $124.3B, 영업이익률 32.4% 기록.",
+                "2025-Q4": "AI 스마트폰 교체 수요 본격화. 연간 매출 견조한 성장세 지속.",
+                "2025-Q1": "iPhone 16 홀리데이 수요 호조로 분기 매출 $124.3B 달성.",
+                "2024-Q4": "Apple Intelligence 공개 이후 업그레이드 사이클 진입. 연간 총매출 성장.",
+                "2024-Q1": "iPhone 15 Pro 시리즈 판매 강세로 홀리데이 분기 매출 $119.6B 달성.",
+            },
+            "MSFT": {
+                "2026-Q4": "Azure AI 연간 런레이트 급증. Copilot 상용화로 클라우드 매출총이익률 72% 유지.",
+                "2026-Q3": "AI 인프라 강화를 위해 분기 설비투자(CapEx) $18.5B 집행. 데이터센터 용량 증설.",
+                "2026-Q2": "엔터프라이즈 AI 워크로드의 Azure 대규모 마이그레이션 지속. 분기 매출 $62.9B.",
+                "2026-Q1": "생성형 AI 어시스턴트 도입 가속화로 생산성/비즈니스 프로세스 부문 두 자릿수 성장.",
+                "2025-Q4": "지능형 클라우드 부문 매출 19% 성장. AI 플랫폼 기여도 8%p 확대.",
+            },
+            "GOOGL": {
+                "2026-Q2": "Google Cloud 연간 런레이트 $46B 돌파. Gemini 모델 기반 검색 광고 최적화로 영업이익 $31.2B 기록.",
+                "2026-Q1": "TPU v5p 및 최신 가속기 기반 AI 인프라 수주 확대로 클라우드 부문 마진율 11.5% 달성.",
+                "2025-Q4": "Search Overviews 및 AI 검색 기능 정식 롤아웃으로 검색 광고 매출 견조한 두 자릿수 성장.",
+                "2024-Q4": "YouTube 구독 및 Google Cloud의 강력한 모멘텀으로 연간 최대 분기 실적 달성.",
+            },
+            "AMZN": {
+                "2026-Q2": "AWS 클라우드 분기 매출 $30.8B 돌파. Trainium 2 칩셋 대규모 클러스터 배포 본격화.",
+                "2026-Q1": "리테일 물류 효율화 및 광고 사업부 고성장으로 분기 영업이익 $17.5B 기록.",
+                "2025-Q4": "홀리데이 전자상거래 최대 매출 및 생성형 AI 엔터프라이즈 계약 급증.",
+            },
+            "META": {
+                "2026-Q2": "Llama 4 오픈 모델 생태계 확장 및 Advantage+ AI 광고 엔진 고도화로 분기 매출 $44.5B 기록.",
+                "2026-Q1": "가족 앱(Family of Apps) 일일 활성 사용자 수 사상 최고치 경신. 분기 영업이익률 39.1% 달성.",
             },
             "TSM": {
                 "2026-Q2": "3nm 및 2nm 테스트 라인 가동률 100% 도달. AI 가속기 웨이퍼 주문 지속 증가.",
@@ -252,100 +586,49 @@ class FinancialService:
                 "2025-Q4": "N3 공정 램프업 가속화 및 스마트폰/AI 칩의 강력한 수요 반등.",
                 "2024-Q4": "AI 반도체 수요가 모바일 계절성을 상쇄하며 분기 최대 실적 경신."
             },
-            "MSFT": {
-                "2026-Q4": "Azure AI 연간 런레이트 급증. Copilot 상용화로 클라우드 매출총이익률 72% 유지.",
-                "2026-Q3": "AI 인프라 강화를 위해 분기 설비투자(CapEx) $19B 집행. 데이터센터 용량 증설."
+            "000660.KS": {
+                "2026-Q2": "HBM3E 12단 독점적 공급 지속 및 eSSD 수요 폭증으로 분기 영업이익 60.5조원($44.8B) 달성. 메모리 슈퍼사이클 정점 진입.",
+                "2026-Q1": "글로벌 AI 빅테크향 HBM3E 풀캐파 공급. 분기 매출 52.6조원, 영업이익 37.6조원 달성.",
+                "2025-Q4": "HBM 연간 매출 비중 40% 돌파 및 사상 최대 분기 영업이익 19.2조원 기록.",
+                "2024-Q4": "AI 서버향 HBM 및 고용량 eSSD 공급 확대로 분기 매출 19.8조원, 영업이익 8.1조원 달성."
+            },
+            "005930.KS": {
+                "2026-Q2": "AI 데이터센터향 선단 메모리 및 HBM3E 12단 양산 본격화로 분기 매출 171.5조원, 영업이익 89.5조원 사상 최대 실적.",
+                "2026-Q1": "메모리 가격 상승 및 플래그십 모바일 회복으로 분기 영업이익 57.2조원 기록.",
+                "2025-Q4": "DS부문 수익성 회복 및 AI 반도체 공급 확대로 분기 영업이익 20.1조원 달성.",
+                "2024-Q4": "고대역폭 메모리 및 선단 공정 전환 투자 확대로 연간 매출 300.9조원 달성."
             }
         }
         return mda_notes.get(ticker, {}).get(period_key, f"{ticker} {period_key} 분기 경영진 실적 분석 및 정기 공시.")
 
     def seed_historical_financials_from_2020(self) -> int:
         """
-        Seed historical quarterly financials from 2020-Q1 through 2026-Q2 (26 quarters)
-        covering the full AI cycle for NVDA, TSM, and MSFT.
+        Seed comprehensive, continuous quarterly financials from 2020 through 2026
+        covering the full AI semiconductor value chain across 20+ companies.
         """
-        # NVDA Historical 2020~2026 (Revenue, OpInc, NetInc, CapEx, DC_Rev, Gaming_Rev)
-        nvda_series = [
-            # 2026
-            ("2026", "Q2", 96221, 63734, 59688, 3450, 88299, 7922),
-            ("2026", "Q1", 81615, 53536, 58321, 3120, 74550, 7065),
-            # 2025
-            ("2025", "Q4", 68100, 43800, 41200, 2800, 62100, 6000),
-            ("2025", "Q3", 57000, 36200, 33800, 2500, 51500, 5500),
-            ("2025", "Q2", 46743, 28440, 26422, 2200, 41331, 5412),
-            ("2025", "Q1", 44062, 21638, 18775, 1900, 39589, 4473),
-            # 2024
-            ("2024", "Q4", 39331, 24800, 22100, 1600, 35200, 4100),
-            ("2024", "Q3", 35082, 22100, 19800, 1400, 30800, 3200),
-            ("2024", "Q2", 30040, 18600, 16600, 1200, 26300, 2900),
-            ("2024", "Q1", 26044, 15800, 14200, 1050, 22500, 2600),
-            # 2023
-            ("2023", "Q4", 22103, 13200, 11800, 950, 18400, 2865),
-            ("2023", "Q3", 18120, 10400, 9240, 820, 14500, 2856),
-            ("2023", "Q2", 13507, 6800, 6188, 740, 10323, 2480),
-            ("2023", "Q1", 7192, 2800, 2450, 620, 4280, 2040),
-            # 2022
-            ("2022", "Q4", 6051, 2140, 1618, 509, 3750, 1831),
-            ("2022", "Q3", 5931, 601, 680, 492, 3833, 1574),
-            ("2022", "Q2", 6704, 499, 656, 414, 3806, 2042),
-            ("2022", "Q1", 8288, 1868, 1618, 360, 3750, 3620),
-            # 2021
-            ("2021", "Q4", 7643, 2970, 3003, 274, 3263, 3420),
-            ("2021", "Q3", 7103, 2671, 2464, 230, 2936, 3221),
-            ("2021", "Q2", 6507, 2444, 2374, 215, 2366, 3060),
-            ("2021", "Q1", 5661, 1956, 1912, 190, 2048, 2760),
-            # 2020
-            ("2020", "Q4", 5003, 1507, 1457, 148, 1903, 2495),
-            ("2020", "Q3", 4726, 1398, 1336, 178, 1900, 2271),
-            ("2020", "Q2", 3866, 651, 622, 152, 1753, 1654),
-            ("2020", "Q1", 3080, 976, 917, 142, 1141, 1339),
-        ]
+        from app.services.historical_financials_data import HISTORICAL_QUARTERLY_SERIES
 
         count = 0
-        for yr, q, rev, op, net, capex, dc, gaming in nvda_series:
-            self.record_metric("NVDA", yr, q, "revenue", rev, source="HISTORICAL_2020_SEED")
-            self.record_metric("NVDA", yr, q, "operating_income", op, source="HISTORICAL_2020_SEED")
-            self.record_metric("NVDA", yr, q, "net_income", net, source="HISTORICAL_2020_SEED")
-            self.record_metric("NVDA", yr, q, "capex", capex, source="HISTORICAL_2020_SEED")
-            self.record_metric("NVDA", yr, q, "segment_datacenter", dc, source="HISTORICAL_2020_SEED")
-            self.record_metric("NVDA", yr, q, "segment_gaming", gaming, source="HISTORICAL_2020_SEED")
-            count += 6
+        for ticker, rows in HISTORICAL_QUARTERLY_SERIES.items():
+            fx_info = self.get_ticker_fx_info(ticker)
+            fx = fx_info["fx_rate"]
+            orig_curr = fx_info["currency"]
+            for row in rows:
+                yr, q, rev, op, net, capex = row[0], row[1], row[2], row[3], row[4], row[5]
+                dc = row[6] if len(row) > 6 else None
+                gaming = row[7] if len(row) > 7 else None
 
-        # TSM Historical
-        tsm_series = [
-            ("2026", "Q2", 26100, 11200, 9800, 8500),
-            ("2026", "Q1", 23500, 10100, 8900, 8100),
-            ("2025", "Q4", 21100, 8800, 7800, 7600),
-            ("2025", "Q3", 19800, 8200, 7100, 7100),
-            ("2024", "Q4", 17500, 7100, 6200, 6500),
-            ("2023", "Q4", 15200, 6100, 5300, 5800),
-            ("2022", "Q4", 14800, 5800, 5000, 5200),
-            ("2021", "Q4", 12500, 4800, 4100, 4500),
-            ("2020", "Q4", 10400, 4100, 3600, 3800),
-        ]
-        for yr, q, rev, op, net, capex in tsm_series:
-            self.record_metric("TSM", yr, q, "revenue", rev, source="HISTORICAL_2020_SEED")
-            self.record_metric("TSM", yr, q, "operating_income", op, source="HISTORICAL_2020_SEED")
-            self.record_metric("TSM", yr, q, "net_income", net, source="HISTORICAL_2020_SEED")
-            self.record_metric("TSM", yr, q, "capex", capex, source="HISTORICAL_2020_SEED")
-            count += 4
-
-        # MSFT Historical
-        msft_series = [
-            ("2026", "Q4", 69200, 29800, 24500, 19200),
-            ("2026", "Q3", 65100, 27500, 22800, 18500),
-            ("2025", "Q4", 62000, 26100, 21500, 16000),
-            ("2024", "Q4", 56500, 23000, 19000, 12000),
-            ("2023", "Q4", 51000, 20500, 16800, 9500),
-            ("2022", "Q4", 46000, 18200, 15000, 7200),
-            ("2021", "Q4", 41000, 16500, 13800, 5800),
-            ("2020", "Q4", 36000, 14200, 11800, 4800),
-        ]
-        for yr, q, rev, op, net, capex in msft_series:
-            self.record_metric("MSFT", yr, q, "revenue", rev, source="HISTORICAL_2020_SEED")
-            self.record_metric("MSFT", yr, q, "operating_income", op, source="HISTORICAL_2020_SEED")
-            self.record_metric("MSFT", yr, q, "net_income", net, source="HISTORICAL_2020_SEED")
-            self.record_metric("MSFT", yr, q, "capex", capex, source="HISTORICAL_2020_SEED")
-            count += 4
+                self.record_metric(ticker, yr, q, "revenue", rev, source="HISTORICAL_2020_SEED", fx_rate=fx, original_currency=orig_curr)
+                self.record_metric(ticker, yr, q, "operating_income", op, source="HISTORICAL_2020_SEED", fx_rate=fx, original_currency=orig_curr)
+                self.record_metric(ticker, yr, q, "net_income", net, source="HISTORICAL_2020_SEED", fx_rate=fx, original_currency=orig_curr)
+                self.record_metric(ticker, yr, q, "capex", capex, source="HISTORICAL_2020_SEED", fx_rate=fx, original_currency=orig_curr)
+                count += 4
+                if dc is not None:
+                    self.record_metric(ticker, yr, q, "segment_datacenter", dc, source="HISTORICAL_2020_SEED", fx_rate=fx, original_currency=orig_curr)
+                    count += 1
+                if gaming is not None:
+                    self.record_metric(ticker, yr, q, "segment_gaming", gaming, source="HISTORICAL_2020_SEED", fx_rate=fx, original_currency=orig_curr)
+                    count += 1
 
         return count
+

@@ -7,14 +7,14 @@ class TestMemorySpotCollector(unittest.TestCase):
         res = collector.add_spot_entry(
             indicator_type="SPOT_DRAM_DDR5_16GB",
             date_str="2026-09-18",
-            value=5.90,
-            note="Test Spot Price"
+            value=56.00,
+            note="DDR5 16GB (2Gx8) 4800/5600 Module"
         )
         self.assertEqual(res["status"], "success")
 
         history = collector.get_spot_history("SPOT_DRAM_DDR5_16GB", limit=50)
         self.assertGreater(len(history), 0)
-        self.assertEqual(history[-1]["value"], 5.90)
+        self.assertEqual(history[-1]["value"], 56.00)
 
     def test_seed_and_summary(self):
         collector = MemorySpotCollector()

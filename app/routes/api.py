@@ -12,6 +12,7 @@ from app.services.consensus_service import ConsensusService
 from app.services.memory_spot_collector import MemorySpotCollector, MEMORY_SPOT_TYPES
 from app.services.financial_service import FinancialService
 from app.services.filing_section_extractor import FilingSectionExtractor
+from app.services.transcript_collector import TranscriptCollector
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -639,6 +640,100 @@ def get_filing_sections(filing_id):
         "period": f"{filing['fiscal_year']}-{filing['fiscal_quarter']}",
         "sections": sections
     })
+
+
+# ─── Earnings Call Transcripts ───
+
+@api_bp.route("/earning-calls", methods=["GET"])
+def get_earning_calls():
+    """Retrieve list of earnings call transcripts with optional filters."""
+    ticker = request.args.get("ticker")
+    layer = request.args.get("layer")
+    year = request.args.get("year")
+    limit = int(request.args.get("limit", 50))
+
+    collector = TranscriptCollector()
+    calls = collector.get_transcripts_list(ticker=ticker, layer_code=layer, fiscal_year=year, limit=limit)
+    return jsonify({
+        "status": "success",
+        "count": len(calls),
+        "data": calls
+    })
+
+@api_bp.route("/earning-calls/<int:call_id>", methods=["GET"])
+def get_earning_call_detail(call_id):
+    """Retrieve detailed transcript text and parsed sections."""
+    collector = TranscriptCollector()
+    detail = collector.get_transcript_detail(call_id)
+    if not detail:
+        return jsonify({"status": "error", "message": f"Transcript {call_id} not found"}), 404
+    return jsonify({
+        "status": "success",
+        "data": detail
+    })
+
+@api_bp.route("/earning-calls/by-quarter", methods=["GET"])
+def get_earning_call_by_quarter():
+    """Find transcript by ticker, fiscal year, and quarter."""
+    ticker = request.args.get("ticker")
+    year = request.args.get("year")
+    quarter = request.args.get("quarter")
+
+    if not ticker or not year or not quarter:
+        return jsonify({"status": "error", "message": "Missing ticker, year, or quarter parameter"}), 400
+
+    collector = TranscriptCollector()
+    detail = collector.get_transcript_by_quarter(ticker, year, quarter)
+    if not detail:
+        return jsonify({"status": "error", "message": f"Transcript for {ticker} {year}-{quarter} not found"}), 404
+    return jsonify({
+        "status": "success",
+        "data": detail
+    })
+
+@api_bp.route("/earning-calls", methods=["POST"])
+def upload_earning_call():
+    """Save or upload a new conference call transcript."""
+    payload = request.get_json(silent=True) or {}
+    ticker = payload.get("ticker")
+    fiscal_year = payload.get("fiscal_year")
+    fiscal_quarter = payload.get("fiscal_quarter")
+    call_date = payload.get("call_date") or date.today().strftime("%Y-%m-%d")
+    transcript_text = payload.get("transcript_text")
+    call_time_et = payload.get("call_time_et", "17:00 ET")
+    source_url = payload.get("source_url")
+
+    if not ticker or not fiscal_year or not fiscal_quarter or not transcript_text:
+        return jsonify({
+            "status": "error",
+            "message": "Required fields: ticker, fiscal_year, fiscal_quarter, transcript_text"
+        }), 400
+
+    collector = TranscriptCollector()
+    res = collector.save_transcript(
+        ticker=ticker,
+        fiscal_year=fiscal_year,
+        fiscal_quarter=fiscal_quarter,
+        call_date=call_date,
+        transcript_text=transcript_text,
+        call_time_et=call_time_et,
+        source_url=source_url
+    )
+    if res.get("status") == "error":
+        return jsonify(res), 400
+    return jsonify(res), 201
+
+@api_bp.route("/earning-calls/seed", methods=["POST"])
+def seed_earning_calls():
+    """Seed authentic sample conference call transcripts."""
+    collector = TranscriptCollector()
+    cnt = collector.seed_sample_transcripts()
+    return jsonify({
+        "status": "success",
+        "seeded_count": cnt,
+        "message": f"{cnt} conference call transcripts seeded successfully"
+    })
+
 
 
 
