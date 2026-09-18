@@ -35,8 +35,11 @@
       <button class="nav-tab-btn" id="btn-tab-consensus" onclick="switchTab('tab-consensus')">
         <span>🎯</span> Beat/Miss
       </button>
+      <button class="nav-tab-btn" id="btn-tab-quarterly" onclick="switchTab('tab-quarterly')">
+        <span>📈</span> 분기 실적(10-Q)
+      </button>
       <button class="nav-tab-btn" id="btn-tab-indicators" onclick="switchTab('tab-indicators')">
-        <span>🇰🇷</span> 선행지표
+        <span>🌐</span> 선행지표
       </button>
       <button class="nav-tab-btn" id="btn-tab-console" onclick="switchTab('tab-console')">
         <span>⚡</span> 수집 콘솔
@@ -339,7 +342,119 @@
       </div>
     </section>
 
-    <!-- 6. INDICATORS TAB -->
+    <!-- 6. QUARTERLY EARNINGS (10-Q/10-K) TAB (Option B) -->
+    <section id="tab-quarterly" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>📈</span> 기업별 10-Q/10-K 분기 실적 인텔리전스 (2020~현재)</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">SEC 정기 공시 원문과 연계된 2020년 이후 장기 분기 재무 추이, 부문별 매출 비중 및 경영진 실적 분석(MD&A)을 조회합니다.</p>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center;">
+          <label style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 600;">기업 선택:</label>
+          <select id="quarterly-ticker-select" class="btn" style="min-width: 180px; font-weight: 700; color: var(--accent-cyan);" onchange="loadQuarterlyFinancials(this.value)">
+            <option value="NVDA" selected>NVDA (엔비디아)</option>
+            <option value="TSM">TSM (TSMC)</option>
+            <option value="MSFT">MSFT (마이크로소프트)</option>
+            <option value="GOOGL">GOOGL (알파벳)</option>
+            <option value="AMD">AMD (AMD)</option>
+            <option value="AMZN">AMZN (아마존)</option>
+            <option value="META">META (메타)</option>
+          </select>
+          <button class="btn" onclick="seedQuarterlyFinancialsData()">🔄 2020~ 실적 시드 로드</button>
+        </div>
+      </div>
+
+      <!-- 4 Key Financial KPIs -->
+      <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 1.5rem;">
+        <div class="kpi-card">
+          <div class="kpi-label"><span>최근 분기 총매출</span><span>💰</span></div>
+          <div class="kpi-value" id="kpi-q-rev">$39.5B</div>
+          <div class="kpi-sub" id="kpi-q-rev-sub" style="color: var(--accent-emerald);">YoY +122.0%</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>영업이익률 (OPM)</span><span>📈</span></div>
+          <div class="kpi-value" id="kpi-q-opm" style="color: var(--accent-cyan);">62.8%</div>
+          <div class="kpi-sub" id="kpi-q-op-inc">영업이익 $24.8B</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>AI 데이터센터 비중</span><span>🚀</span></div>
+          <div class="kpi-value" id="kpi-q-dc-ratio" style="color: #A78BFA;">89.1%</div>
+          <div class="kpi-sub" id="kpi-q-dc-amt">DC 매출 $35.2B</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>분기 설비투자 (CapEx)</span><span>🏭</span></div>
+          <div class="kpi-value" id="kpi-q-capex">$3.1B</div>
+          <div class="kpi-sub" id="kpi-q-capex-sub">차세대 컴퓨팅 인프라</div>
+        </div>
+      </div>
+
+      <!-- 2-Column Charts -->
+      <div class="dashboard-columns" style="margin-bottom: 1.5rem;">
+        <!-- Left: Revenue & Operating Margin Chart -->
+        <div class="glass-panel">
+          <div class="section-header">
+            <h3 class="section-title" style="font-size: 1.05rem;" id="chart-quarterly-title"><span>📊</span> 분기 매출액 & 영업이익 추이 (2020~2026, M USD)</h3>
+          </div>
+          <div style="height: 290px; position: relative;">
+            <canvas id="quarterly-financial-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Right: CapEx & Data Center Segment Chart -->
+        <div class="glass-panel">
+          <div class="section-header">
+            <h3 class="section-title" style="font-size: 1.05rem;"><span>⚡</span> 설비투자(CapEx) & 데이터센터 매출 추이 (M USD)</h3>
+          </div>
+          <div style="height: 290px; position: relative;">
+            <canvas id="quarterly-capex-chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 10-Q/10-K Linked Financial Table -->
+      <div class="glass-panel" style="margin-bottom: 1.5rem;">
+        <div class="section-header">
+          <div>
+            <h3 class="section-title" style="font-size: 1.05rem;"><span>📋</span> 10-Q / 10-K 공시 연계 분기 실적 히스토리</h3>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">행을 클릭하면 하단에 해당 분기 경영진 실적 분석(MD&A) 요약이 표시됩니다.</p>
+          </div>
+          <span style="font-size: 0.78rem; color: var(--text-secondary);" id="quarterly-count-label">26개 분기 수집 완료</span>
+        </div>
+        <div class="table-container">
+          <table class="consensus-matrix-table" id="quarterly-financial-table">
+            <thead>
+              <tr>
+                <th style="text-align: left;">분기</th>
+                <th>보고서</th>
+                <th>접수일자</th>
+                <th style="text-align: right;">매출액 (YoY)</th>
+                <th style="text-align: right;">영업이익 (OPM)</th>
+                <th style="text-align: right;">순이익</th>
+                <th style="text-align: right;">설비투자(CapEx)</th>
+                <th style="text-align: right;">데이터센터 매출 (비중)</th>
+                <th style="text-align: center;">공시 원문</th>
+              </tr>
+            </thead>
+            <tbody id="quarterly-financial-tbody">
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">분기 실적 데이터를 불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Selected Quarter MD&A Highlight Box -->
+      <div class="glass-panel" id="quarterly-mda-panel" style="border-left: 4px solid var(--accent-cyan);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+          <h4 style="font-size: 1.05rem; color: #fff; margin: 0;" id="mda-panel-title">🎙️ NVDA 2026-Q2 10-Q 경영진 실적 분석 (MD&A) & 주요 코멘트</h4>
+          <span class="status-pill" id="mda-panel-period">2026-Q2 10-Q</span>
+        </div>
+        <div style="font-size: 0.88rem; line-height: 1.7; color: var(--text-secondary); background: rgba(0,0,0,0.25); padding: 1rem; border-radius: var(--radius-sm);" id="mda-panel-content">
+          Blackwell 아키텍처 대량 양산 및 출하 본격화. 데이터센터 매출 89% 비중으로 사상 최대 기록.
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. INDICATORS TAB -->
     <section id="tab-indicators" class="tab-content">
       <div class="section-header">
         <div>
@@ -630,12 +745,12 @@
     </div>
   </div>
 
-  <!-- Filing Excerpt & Full-Text Modal -->
+  <!-- Filing Excerpt & Full-Text Modal (Dual Tabs: Summary vs Raw) -->
   <div class="modal-overlay" id="filing-modal" onclick="closeModalOnOverlay(event, 'filing-modal')">
-    <div class="modal-container" style="max-width: 900px; width: 90%;">
+    <div class="modal-container" style="max-width: 950px; width: 92%; max-height: 88vh;">
       <button class="modal-close" onclick="closeModal('filing-modal')">✕</button>
       
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.8rem;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.8rem; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.8rem;">
         <div>
           <div style="display: flex; align-items: center; gap: 0.6rem;">
             <span id="modal-filing-badge" class="filing-badge filing-10-Q">10-Q</span>
@@ -650,14 +765,56 @@
         </div>
       </div>
 
-      <!-- Quick Search inside Modal Text -->
-      <div style="margin-bottom: 0.8rem; display: flex; justify-content: space-between; align-items: center;">
-        <input type="text" id="modal-text-filter" class="search-input" placeholder="본문 내 키워드 검색 (예: Blackwell, Revenue, Risk)..." style="width: 320px;" oninput="filterModalText(this.value)">
-        <span id="modal-filing-char-count" style="font-size: 0.75rem; color: var(--text-muted);">0자</span>
+      <!-- Modal Sub-Tabs -->
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.5rem;">
+        <button class="layer-pill active" id="btn-modal-tab-summary" onclick="switchModalSubTab('summary')">📊 핵심 요약 정리 (MD&A/리스크)</button>
+        <button class="layer-pill" id="btn-modal-tab-raw" onclick="switchModalSubTab('raw')">📑 원문 전문 열람 (Full-Text)</button>
       </div>
 
-      <div style="background: #090D16; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1.2rem; max-height: 520px; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.65; color: #D1D5DB; white-space: pre-wrap;" id="modal-filing-content">
-        내용을 불러오는 중...
+      <!-- 1. Executive Summary & Section Breakdown Tab View -->
+      <div id="modal-subtab-summary">
+        <!-- MD&A Section Box -->
+        <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <h4 style="font-size: 0.95rem; color: var(--accent-cyan); margin: 0;">🎙️ Item 2 / Item 7. 경영진 실적 분석 및 토론 (MD&A)</h4>
+            <span class="status-pill" id="modal-sec-mda-len">자동 분할 완료</span>
+          </div>
+          <div id="modal-sec-mda" style="font-size: 0.84rem; line-height: 1.65; color: #D1D5DB; max-height: 220px; overflow-y: auto; white-space: pre-wrap; font-family: 'Inter', sans-serif;">
+            MD&A 섹션을 분석하는 중...
+          </div>
+        </div>
+
+        <!-- Risk Factors Box -->
+        <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <h4 style="font-size: 0.95rem; color: var(--accent-rose); margin: 0;">⚠️ Item 1A. 주요 사업 리스크 요인 (Risk Factors)</h4>
+            <span class="status-pill" id="modal-sec-risk-len">자동 분할 완료</span>
+          </div>
+          <div id="modal-sec-risk" style="font-size: 0.84rem; line-height: 1.65; color: #D1D5DB; max-height: 160px; overflow-y: auto; white-space: pre-wrap; font-family: 'Inter', sans-serif;">
+            리스크 요인을 분석하는 중...
+          </div>
+        </div>
+
+        <!-- Guidance Mentions Box -->
+        <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1rem;">
+          <h4 style="font-size: 0.95rem; color: var(--accent-emerald); margin: 0 0 0.5rem 0;">🔮 경영진 가이던스 & 전망 발췌문 (Outlook & Guidance)</h4>
+          <div id="modal-sec-guidance" style="font-size: 0.84rem; line-height: 1.65; color: #D1D5DB;">
+            가이던스 발췌문을 검색하는 중...
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Full-Text Raw Viewer Tab View -->
+      <div id="modal-subtab-raw" style="display: none;">
+        <!-- Quick Search inside Modal Text -->
+        <div style="margin-bottom: 0.8rem; display: flex; justify-content: space-between; align-items: center;">
+          <input type="text" id="modal-text-filter" class="search-input" placeholder="본문 내 키워드 검색 (예: Blackwell, Revenue, Risk)..." style="width: 320px;" oninput="filterModalText(this.value)">
+          <span id="modal-filing-char-count" style="font-size: 0.75rem; color: var(--text-muted);">0자</span>
+        </div>
+
+        <div style="background: #090D16; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1.2rem; max-height: 480px; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.65; color: #D1D5DB; white-space: pre-wrap;" id="modal-filing-content">
+          내용을 불러오는 중...
+        </div>
       </div>
     </div>
   </div>

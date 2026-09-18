@@ -30,6 +30,11 @@ function switchTab(tabId) {
   if (tabId === "tab-filings") loadFilingsTable();
   if (tabId === "tab-calendar") loadCalendarTable();
   if (tabId === "tab-consensus") loadConsensusData();
+  if (tabId === "tab-quarterly") {
+    const sel = document.getElementById("quarterly-ticker-select");
+    const t = sel ? sel.value : "NVDA";
+    loadQuarterlyFinancials(t);
+  }
   if (tabId === "tab-indicators") {
     loadMemorySpotData();
     loadKrExportData();
@@ -362,6 +367,26 @@ function renderPriceChart(prices) {
   });
 }
 
+// Subtab switcher inside Filing Modal (Summary vs Raw)
+function switchModalSubTab(tabName) {
+  const sumTab = document.getElementById("modal-subtab-summary");
+  const rawTab = document.getElementById("modal-subtab-raw");
+  const btnSum = document.getElementById("btn-modal-tab-summary");
+  const btnRaw = document.getElementById("btn-modal-tab-raw");
+
+  if (tabName === "summary") {
+    if (sumTab) sumTab.style.display = "block";
+    if (rawTab) rawTab.style.display = "none";
+    if (btnSum) btnSum.classList.add("active");
+    if (btnRaw) btnRaw.classList.remove("active");
+  } else {
+    if (sumTab) sumTab.style.display = "none";
+    if (rawTab) rawTab.style.display = "block";
+    if (btnSum) btnSum.classList.remove("active");
+    if (btnRaw) btnRaw.classList.add("active");
+  }
+}
+
 // 6. Filing Excerpt & Full-Text Modal
 let currentFilingId = null;
 let fullFilingText = "";
@@ -372,13 +397,22 @@ async function openFilingModal(filingId) {
   const charCountEl = document.getElementById("modal-filing-char-count");
   const filterInput = document.getElementById("modal-text-filter");
   const rawLink = document.getElementById("modal-filing-raw-link");
-  const downloadBtn = document.getElementById("modal-filing-download-btn");
+  const mdaEl = document.getElementById("modal-sec-mda");
+  const riskEl = document.getElementById("modal-sec-risk");
+  const guidanceEl = document.getElementById("modal-sec-guidance");
+  const mdaLenEl = document.getElementById("modal-sec-mda-len");
+  const riskLenEl = document.getElementById("modal-sec-risk-len");
 
   if (filterInput) filterInput.value = "";
   if (contentEl) contentEl.textContent = "원문 텍스트를 불러오는 중...";
   if (charCountEl) charCountEl.textContent = "불러오는 중...";
+  if (mdaEl) mdaEl.textContent = "MD&A 섹션 분할 분석 중...";
+  if (riskEl) riskEl.textContent = "리스크 요인 분석 중...";
+  if (guidanceEl) guidanceEl.textContent = "가이던스 발췌문 검색 중...";
   if (rawLink) rawLink.style.display = "none";
 
+  // Default to summary subtab
+  switchModalSubTab("summary");
   document.getElementById("filing-modal").classList.add("active");
 
   try {
@@ -412,8 +446,38 @@ async function openFilingModal(filingId) {
     contentEl.textContent = fullFilingText;
     charCountEl.textContent = `전체 ${Number(fullFilingText.length).toLocaleString()}자`;
 
+    // 3. Fetch Isolated Sections (MD&A, Risk, Highlights)
+    const secRes = await fetch(`/api/filings/${filingId}/sections`);
+    const secJson = await secRes.json();
+    if (secJson.status === "success" && secJson.sections) {
+      const secs = secJson.sections;
+      const mda = secs.mda || secs.business || {};
+      const risk = secs.risk_factors || {};
+      const hl = secs.highlights || {};
+
+      if (mdaEl) {
+        mdaEl.textContent = mda.text || "(MD&A 섹션을 찾지 못했습니다. 원문 전문 탭에서 확인하세요.)";
+        if (mdaLenEl) mdaLenEl.textContent = mda.length > 0 ? `${Number(mda.length).toLocaleString()}자 추출` : "미검출";
+      }
+
+      if (riskEl) {
+        riskEl.textContent = risk.text || "(주요 리스크 섹션을 찾지 못했습니다. 원문 전문 탭에서 확인하세요.)";
+        if (riskLenEl) riskLenEl.textContent = risk.length > 0 ? `${Number(risk.length).toLocaleString()}자 추출` : "미검출";
+      }
+
+      if (guidanceEl) {
+        if (hl.guidance_mentions && hl.guidance_mentions.length > 0) {
+          guidanceEl.innerHTML = hl.guidance_mentions.map(g => `
+            <div style="margin-bottom:0.4rem; padding-left:0.5rem; border-left:2px solid var(--accent-emerald);">• ${g}</div>
+          `).join("");
+        } else {
+          guidanceEl.textContent = "본문에서 감지된 명시적 분기 가이던스 문장이 없습니다.";
+        }
+      }
+    }
+
   } catch (err) {
-    console.error("Failed to load filing full text:", err);
+    console.error("Failed to load filing full text or sections:", err);
     contentEl.textContent = "오류 발생: 텍스트를 불러오지 못했습니다.";
   }
 }
@@ -1309,5 +1373,355 @@ async function fetchMemorySpotApi() {
     alert(`오류: ${err.message}`);
   }
 }
+
+// ─── 10. Quarterly Financial Intelligence (10-Q/10-K from 2020) ───
+let quarterlyChart = null;
+let capexChart = null;
+let currentQuarterlySeries = [];
+let currentQuarterlyEntity = null;
+
+async function loadQuarterlyFinancials(ticker = "NVDA") {
+  const tbody = document.getElementById("quarterly-financial-tbody");
+  if (tbody) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">${ticker} 분기 실적 데이터를 불러오는 중...</td></tr>`;
+  }
+
+  try {
+    const res = await fetch(`/api/financials/${ticker}`);
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    currentQuarterlySeries = json.series || [];
+    currentQuarterlyEntity = json.entity || {};
+
+    const countLabel = document.getElementById("quarterly-count-label");
+    if (countLabel) {
+      countLabel.textContent = `${currentQuarterlySeries.length}개 분기 수집 완료 (2020~2026)`;
+    }
+
+    renderQuarterlySummary(currentQuarterlySeries, currentQuarterlyEntity);
+    renderQuarterlyChart(currentQuarterlySeries, ticker);
+    renderCapexChart(currentQuarterlySeries, ticker);
+    renderQuarterlyTable(currentQuarterlySeries);
+
+    // Default select latest quarter for MD&A highlight
+    if (currentQuarterlySeries.length > 0) {
+      selectQuarterRow(0);
+    }
+  } catch (err) {
+    console.error(`Failed to load quarterly financials for ${ticker}:`, err);
+  }
+}
+
+function renderQuarterlySummary(series, entity) {
+  if (!series || series.length === 0) return;
+  const latest = series[0];
+
+  const revEl = document.getElementById("kpi-q-rev");
+  const revSubEl = document.getElementById("kpi-q-rev-sub");
+  const opmEl = document.getElementById("kpi-q-opm");
+  const opIncEl = document.getElementById("kpi-q-op-inc");
+  const dcRatioEl = document.getElementById("kpi-q-dc-ratio");
+  const dcAmtEl = document.getElementById("kpi-q-dc-amt");
+  const capexEl = document.getElementById("kpi-q-capex");
+  const capexSubEl = document.getElementById("kpi-q-capex-sub");
+
+  if (revEl && latest.revenue !== undefined) {
+    revEl.textContent = `$${(latest.revenue / 1000).toFixed(1)}B`;
+  }
+  if (revSubEl) {
+    const yoy = latest.revenue_yoy_pct;
+    if (yoy !== null && yoy !== undefined) {
+      revSubEl.textContent = `YoY ${yoy > 0 ? '+' : ''}${yoy.toFixed(1)}% (${latest.period})`;
+      revSubEl.style.color = yoy >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)";
+    } else {
+      revSubEl.textContent = `${latest.period} 기준`;
+    }
+  }
+
+  if (opmEl && latest.op_margin_pct !== undefined) {
+    opmEl.textContent = `${Number(latest.op_margin_pct).toFixed(1)}%`;
+  }
+  if (opIncEl && latest.operating_income !== undefined) {
+    opIncEl.textContent = `영업이익 $${(latest.operating_income / 1000).toFixed(1)}B`;
+  }
+
+  if (dcRatioEl) {
+    dcRatioEl.textContent = latest.revenue_datacenter_pct ? `${Number(latest.revenue_datacenter_pct).toFixed(1)}%` : "-";
+  }
+  if (dcAmtEl) {
+    dcAmtEl.textContent = latest.revenue_datacenter ? `DC 매출 $${(latest.revenue_datacenter / 1000).toFixed(1)}B` : "부문 데이터 없음";
+  }
+
+  if (capexEl && latest.capex !== undefined) {
+    capexEl.textContent = `$${(latest.capex / 1000).toFixed(1)}B`;
+  }
+  if (capexSubEl) {
+    capexSubEl.textContent = `설비투자액 (${latest.period})`;
+  }
+}
+
+function renderQuarterlyChart(series, ticker) {
+  const ctx = document.getElementById("quarterly-financial-chart");
+  if (!ctx) return;
+  if (quarterlyChart) quarterlyChart.destroy();
+
+  if (!series || series.length === 0) return;
+
+  const chronological = [...series].reverse();
+  const labels = chronological.map(d => d.period);
+  const revValues = chronological.map(d => d.revenue);
+  const opValues = chronological.map(d => d.operating_income);
+  const opmValues = chronological.map(d => d.op_margin_pct);
+
+  const titleEl = document.getElementById("chart-quarterly-title");
+  if (titleEl) {
+    titleEl.innerHTML = `<span>📊</span> ${ticker} 분기 매출액 & 영업이익 추이 (2020~2026, M USD)`;
+  }
+
+  quarterlyChart = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: "bar",
+          label: "매출액 (M USD)",
+          data: revValues,
+          backgroundColor: "rgba(56, 189, 248, 0.4)",
+          borderColor: "#38BDF8",
+          borderWidth: 1.5,
+          borderRadius: 3,
+          yAxisID: "y"
+        },
+        {
+          type: "bar",
+          label: "영업이익 (M USD)",
+          data: opValues,
+          backgroundColor: "rgba(16, 185, 129, 0.5)",
+          borderColor: "#10B981",
+          borderWidth: 1.5,
+          borderRadius: 3,
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "영업이익률 (%)",
+          data: opmValues,
+          borderColor: "#F59E0B",
+          backgroundColor: "transparent",
+          borderWidth: 2.5,
+          pointBackgroundColor: "#F59E0B",
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.2,
+          yAxisID: "y1"
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: "#9CA3AF", font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              if (c.dataset.type === "bar") {
+                return `${c.dataset.label}: $${Number(c.parsed.y).toLocaleString()}M ($${(c.parsed.y / 1000).toFixed(1)}B)`;
+              }
+              return `OPM: ${c.parsed.y.toFixed(1)}%`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: "rgba(255,255,255,0.04)" },
+          ticks: { color: "#9CA3AF", maxTicksLimit: 14, font: { size: 10 } }
+        },
+        y: {
+          type: "linear",
+          display: true,
+          position: "left",
+          grid: { color: "rgba(255,255,255,0.05)" },
+          ticks: {
+            color: "#38BDF8",
+            font: { size: 10 },
+            callback: v => `$${(v / 1000).toFixed(0)}B`
+          }
+        },
+        y1: {
+          type: "linear",
+          display: true,
+          position: "right",
+          grid: { drawOnChartArea: false },
+          ticks: {
+            color: "#F59E0B",
+            font: { size: 10 },
+            callback: v => `${v}%`
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderCapexChart(series, ticker) {
+  const ctx = document.getElementById("quarterly-capex-chart");
+  if (!ctx) return;
+  if (capexChart) capexChart.destroy();
+
+  if (!series || series.length === 0) return;
+
+  const chronological = [...series].reverse();
+  const labels = chronological.map(d => d.period);
+  const capexValues = chronological.map(d => d.capex);
+  const dcValues = chronological.map(d => d.revenue_datacenter);
+
+  capexChart = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: "bar",
+          label: "설비투자(CapEx) (M USD)",
+          data: capexValues,
+          backgroundColor: "rgba(244, 63, 94, 0.4)",
+          borderColor: "#F43F5E",
+          borderWidth: 1.5,
+          borderRadius: 3,
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "데이터센터 매출 (M USD)",
+          data: dcValues,
+          borderColor: "#A78BFA",
+          backgroundColor: "rgba(167, 139, 250, 0.1)",
+          borderWidth: 2.5,
+          fill: true,
+          pointBackgroundColor: "#A78BFA",
+          pointRadius: 3,
+          tension: 0.25,
+          yAxisID: "y"
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: "#9CA3AF", font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: (c) => `${c.dataset.label}: $${Number(c.parsed.y).toLocaleString()}M`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: "rgba(255,255,255,0.04)" },
+          ticks: { color: "#9CA3AF", maxTicksLimit: 14, font: { size: 10 } }
+        },
+        y: {
+          grid: { color: "rgba(255,255,255,0.05)" },
+          ticks: {
+            color: "#A78BFA",
+            font: { size: 10 },
+            callback: v => `$${(v / 1000).toFixed(0)}B`
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderQuarterlyTable(series) {
+  const tbody = document.getElementById("quarterly-financial-tbody");
+  if (!tbody) return;
+
+  if (!series || series.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">수집된 분기 실적 데이터가 없습니다. 상단 '🔄 2020~ 실적 시드 로드'를 클릭해 보세요.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = series.map((row, idx) => {
+    const yoy = row.revenue_yoy_pct;
+    const yoyBadge = yoy !== null && yoy !== undefined
+      ? `<span style="font-size:0.75rem; color:${yoy >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)'}; margin-left:0.4rem;">(${yoy > 0 ? '+' : ''}${yoy.toFixed(1)}%)</span>`
+      : "";
+
+    const filingBtn = row.filing_id
+      ? `<button class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="event.stopPropagation(); openFilingModal(${row.filing_id})">📑 원문</button>`
+      : `<span style="color:var(--text-muted); font-size:0.75rem;">-</span>`;
+
+    const dcText = row.revenue_datacenter
+      ? `$${(row.revenue_datacenter / 1000).toFixed(1)}B <span style="font-size:0.75rem; color:#A78BFA;">(${row.revenue_datacenter_pct ? row.revenue_datacenter_pct.toFixed(0) : '-'}%)</span>`
+      : "-";
+
+    return `
+      <tr onclick="selectQuarterRow(${idx})" style="cursor: pointer;" id="quarter-row-${idx}">
+        <td><strong>${row.period}</strong></td>
+        <td><span class="filing-badge filing-${row.filing_type || '10-Q'}">${row.filing_type || '10-Q'}</span></td>
+        <td style="color: var(--text-muted); font-size: 0.8rem;">${row.filed_date || '-'}</td>
+        <td style="text-align: right; font-weight: 600;">$${(row.revenue / 1000).toFixed(1)}B ${yoyBadge}</td>
+        <td style="text-align: right; color: var(--accent-cyan);">$${(row.operating_income / 1000).toFixed(1)}B <span style="font-size:0.75rem; color:var(--text-muted);">(${row.op_margin_pct ? row.op_margin_pct.toFixed(1) : '-'}%)</span></td>
+        <td style="text-align: right;">$${row.net_income ? (row.net_income / 1000).toFixed(1) + 'B' : '-'}</td>
+        <td style="text-align: right; color: #F43F5E;">$${row.capex ? (row.capex / 1000).toFixed(1) + 'B' : '-'}</td>
+        <td style="text-align: right;">${dcText}</td>
+        <td style="text-align: center;">${filingBtn}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function selectQuarterRow(index) {
+  if (!currentQuarterlySeries || !currentQuarterlySeries[index]) return;
+  const item = currentQuarterlySeries[index];
+
+  // Highlight selected table row
+  document.querySelectorAll("#quarterly-financial-tbody tr").forEach(tr => tr.style.background = "");
+  const selectedTr = document.getElementById(`quarter-row-${index}`);
+  if (selectedTr) {
+    selectedTr.style.background = "rgba(56, 189, 248, 0.12)";
+  }
+
+  // Update MD&A highlight panel
+  const titleEl = document.getElementById("mda-panel-title");
+  const periodEl = document.getElementById("mda-panel-period");
+  const contentEl = document.getElementById("mda-panel-content");
+
+  const ticker = (currentQuarterlyEntity && currentQuarterlyEntity.ticker) || "NVDA";
+
+  if (titleEl) {
+    titleEl.innerHTML = `🎙️ ${ticker} ${item.period} (${item.filing_type || '10-Q'}) 경영진 실적 분석 (MD&A) & 주요 코멘트`;
+  }
+  if (periodEl) {
+    periodEl.textContent = `${item.period} ${item.filing_type || '10-Q'}`;
+  }
+  if (contentEl) {
+    contentEl.textContent = item.mda_summary || "(해당 분기에 등록된 MD&A 요약 정보가 없습니다.)";
+  }
+}
+
+async function seedQuarterlyFinancialsData() {
+  try {
+    const res = await fetch("/api/financials/seed", { method: "POST" });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ 2020년부터의 분기 실적 시계열(${json.seeded_count}건)이 적재되었습니다!`);
+      const sel = document.getElementById("quarterly-ticker-select");
+      const t = sel ? sel.value : "NVDA";
+      loadQuarterlyFinancials(t);
+    } else {
+      alert(`실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  }
+}
+
 
 

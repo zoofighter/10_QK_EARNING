@@ -10,6 +10,8 @@ from app.services.price_collector import PriceCollector
 from app.services.kr_export_collector import KoreaExportCollector, INDICATOR_TYPES as KR_INDICATOR_TYPES
 from app.services.consensus_service import ConsensusService
 from app.services.memory_spot_collector import MemorySpotCollector, MEMORY_SPOT_TYPES
+from app.services.financial_service import FinancialService
+from app.services.filing_section_extractor import FilingSectionExtractor
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -580,5 +582,63 @@ def fetch_memory_spot_api():
 def get_memory_spot_types():
     """Retrieve list of available memory spot indicators."""
     return jsonify({"status": "success", "data": MEMORY_SPOT_TYPES})
+
+# ─── Quarterly Financials (2020~Present) ───
+
+@api_bp.route("/financials/<ticker>", methods=["GET"])
+def get_quarterly_financials(ticker):
+    """Retrieve complete quarterly financial series from 2020 to present."""
+    start_year = int(request.args.get("start_year", 2020))
+    service = FinancialService()
+    res = service.get_quarterly_financials(ticker=ticker, start_year=start_year)
+    if res.get("status") == "error":
+        return jsonify(res), 404
+    return jsonify(res)
+
+@api_bp.route("/financials/seed", methods=["POST"])
+def seed_quarterly_financials():
+    """Seed historical quarterly financials for AI tech leaders from 2020-Q1."""
+    service = FinancialService()
+    cnt = service.seed_historical_financials_from_2020()
+    return jsonify({
+        "status": "success",
+        "seeded_count": cnt,
+        "message": f"Historical quarterly financials from 2020 seeded ({cnt} metrics)"
+    })
+
+# ─── Filing Section Extractor ───
+
+@api_bp.route("/filings/<int:filing_id>/sections", methods=["GET"])
+def get_filing_sections(filing_id):
+    """Extract and isolate key sections (MD&A, Risk Factors, Financial Statements) from filing."""
+    filing = query_db(
+        """
+        SELECT f.id, f.filing_type, f.fiscal_year, f.fiscal_quarter, f.filed_date,
+               f.raw_text, e.ticker, e.name_en, e.name_ko
+        FROM filing f
+        JOIN entity e ON f.entity_id = e.id
+        WHERE f.id = ?
+        """,
+        (filing_id,),
+        one=True
+    )
+    if not filing:
+        return jsonify({"status": "error", "message": "Filing not found"}), 404
+
+    raw_text = filing.get("raw_text") or ""
+    form_type = filing.get("filing_type", "10-Q")
+
+    sections = FilingSectionExtractor.extract_sections(raw_text, form_type)
+
+    return jsonify({
+        "status": "success",
+        "filing_id": filing_id,
+        "ticker": filing["ticker"],
+        "name_en": filing["name_en"],
+        "form": form_type,
+        "period": f"{filing['fiscal_year']}-{filing['fiscal_quarter']}",
+        "sections": sections
+    })
+
 
 
