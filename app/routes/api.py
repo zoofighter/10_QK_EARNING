@@ -2,11 +2,14 @@
 REST API Routes for QK_EARNING Application
 """
 from datetime import datetime, date
-from flask import Blueprint, jsonify, request
+from pathlib import Path
+from flask import Blueprint, jsonify, request, send_file
 from app.models.database import query_db, execute_db
 from app.services.edgar_collector import EdgarCollector
 from app.services.price_collector import PriceCollector
 from app.services.kr_export_collector import KoreaExportCollector, INDICATOR_TYPES as KR_INDICATOR_TYPES
+from app.services.consensus_service import ConsensusService
+from app.services.memory_spot_collector import MemorySpotCollector, MEMORY_SPOT_TYPES
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -193,7 +196,7 @@ def get_filings():
 
 @api_bp.route("/filings/<int:filing_id>", methods=["GET"])
 def get_filing_detail(filing_id):
-    """Filing detail including text excerpt."""
+    """Filing detail including text excerpt and download status."""
     filing = query_db(
         """
         SELECT f.*, e.ticker, e.name_en, e.name_ko, e.layer_code
@@ -208,12 +211,67 @@ def get_filing_detail(filing_id):
         return jsonify({"status": "error", "message": "Filing not found"}), 404
 
     # Provide safe preview of raw text
-    text_preview = (filing.get("raw_text") or "")[:5000]
+    raw_text = filing.get("raw_text") or ""
+    text_preview = raw_text[:8000]
     result = dict(filing)
     result["raw_text_preview"] = text_preview
+    result["raw_text_length"] = len(raw_text)
+    result["has_local_file"] = bool(filing.get("local_file_path") and Path(filing.get("local_file_path")).exists())
     result.pop("raw_text", None)
 
     return jsonify({"status": "success", "data": result})
+
+@api_bp.route("/filings/<int:filing_id>/text", methods=["GET"])
+def get_filing_full_text(filing_id):
+    """Retrieve full text content of a filing."""
+    filing = query_db(
+        """
+        SELECT f.id, f.filing_type, f.fiscal_year, f.fiscal_quarter, f.filed_date,
+               f.raw_text, e.ticker, e.name_en, e.name_ko
+        FROM filing f
+        JOIN entity e ON f.entity_id = e.id
+        WHERE f.id = ?
+        """,
+        (filing_id,),
+        one=True
+    )
+    if not filing:
+        return jsonify({"status": "error", "message": "Filing not found"}), 404
+
+    return jsonify({
+        "status": "success",
+        "data": {
+            "id": filing["id"],
+            "ticker": filing["ticker"],
+            "name_en": filing["name_en"],
+            "form": filing["filing_type"],
+            "period": f"{filing['fiscal_year']}-{filing['fiscal_quarter']}",
+            "filed_date": filing["filed_date"],
+            "text": filing["raw_text"] or "(원문 텍스트가 아직 수집되지 않았습니다. 원문 다운로드를 실행해 주세요.)"
+        }
+    })
+
+@api_bp.route("/filings/<int:filing_id>/download", methods=["POST"])
+def download_filing(filing_id):
+    """Download filing raw document and update text/FTS index on demand."""
+    collector = EdgarCollector()
+    res = collector.download_single_filing(filing_id)
+    if res.get("status") == "error":
+        return jsonify(res), 400
+    return jsonify(res)
+
+@api_bp.route("/filings/<int:filing_id>/raw", methods=["GET"])
+def get_filing_raw_file(filing_id):
+    """Serve the downloaded local HTML file directly."""
+    filing = query_db("SELECT local_file_path FROM filing WHERE id = ?", (filing_id,), one=True)
+    if not filing or not filing["local_file_path"]:
+        return jsonify({"status": "error", "message": "Local file not found"}), 404
+
+    path = Path(filing["local_file_path"])
+    if not path.exists():
+        return jsonify({"status": "error", "message": "File does not exist on disk"}), 404
+
+    return send_file(path, mimetype="text/html")
 
 @api_bp.route("/calendar", methods=["GET"])
 def get_calendar():
@@ -264,18 +322,19 @@ def trigger_collection():
     payload = request.get_json() or {}
     target_type = payload.get("type", "filings") # 'filings' or 'prices'
     ticker = payload.get("ticker")
+    download_docs = payload.get("download_docs", True)
 
     if target_type == "filings":
         collector = EdgarCollector()
         if ticker:
-            res = collector.collect_for_entity(ticker, form_types=["10-Q", "10-K", "8-K"], limit=10, download_docs=False)
+            res = collector.collect_for_entity(ticker, form_types=["10-Q", "10-K", "8-K"], limit=10, download_docs=download_docs)
             return jsonify({"status": "success", "result": res})
         else:
             # Batch collect for top AI firms
             sample_tickers = ["NVDA", "GOOGL", "MSFT", "AMZN", "META", "AMD", "TSM", "MU"]
             results = []
             for t in sample_tickers:
-                r = collector.collect_for_entity(t, form_types=["10-Q", "10-K"], limit=5, download_docs=False)
+                r = collector.collect_for_entity(t, form_types=["10-Q", "10-K"], limit=5, download_docs=download_docs)
                 results.append(r)
             return jsonify({"status": "success", "batch_results": results})
 
@@ -398,3 +457,128 @@ def add_kr_export():
 def get_kr_indicator_types():
     """Return available Korea export indicator types and their metadata."""
     return jsonify({"status": "success", "data": KR_INDICATOR_TYPES})
+
+@api_bp.route("/indicators/kr-export/seed", methods=["POST"])
+def seed_kr_export():
+    """Seed sample Korea 10-day semiconductor export stats."""
+    collector = KoreaExportCollector()
+    cnt = collector.seed_sample_export_data()
+    return jsonify({"status": "success", "seeded_count": cnt, "message": "10-day semiconductor export sample data seeded"})
+
+# ─── Consensus & Beat/Miss Endpoints ───
+
+@api_bp.route("/consensus", methods=["GET"])
+def get_consensus():
+    """Retrieve consensus and beat/miss items."""
+    ticker = request.args.get("ticker")
+    metric = request.args.get("metric")
+    limit = int(request.args.get("limit", 100))
+
+    service = ConsensusService()
+    items = service.get_consensus_list(ticker=ticker, metric_type=metric, limit=limit)
+    return jsonify({"status": "success", "data": items, "count": len(items)})
+
+@api_bp.route("/consensus", methods=["POST"])
+def add_consensus():
+    """Record or update consensus and actual results."""
+    payload = request.get_json() or {}
+    required = ["ticker", "fiscal_year", "fiscal_quarter", "metric_type", "consensus_value"]
+    for field in required:
+        if field not in payload:
+            return jsonify({"status": "error", "message": f"Missing required field: {field}"}), 400
+
+    service = ConsensusService()
+    res = service.record_consensus(
+        ticker=payload["ticker"],
+        fiscal_year=str(payload["fiscal_year"]),
+        fiscal_quarter=str(payload["fiscal_quarter"]),
+        metric_type=payload["metric_type"],
+        consensus_value=float(payload["consensus_value"]),
+        actual_value=float(payload["actual_value"]) if payload.get("actual_value") is not None else None,
+        announcement_date=payload.get("announcement_date"),
+        source=payload.get("source", "MANUAL")
+    )
+    if res.get("status") == "error":
+        return jsonify(res), 400
+    return jsonify(res)
+
+@api_bp.route("/consensus/matrix", methods=["GET"])
+def get_consensus_matrix():
+    """Retrieve Company x Quarter matrix for Beat/Miss Heatmap."""
+    service = ConsensusService()
+    matrix = service.get_matrix_view()
+    return jsonify({"status": "success", "data": matrix})
+
+@api_bp.route("/consensus/seed", methods=["POST"])
+def seed_consensus():
+    """Seed representative consensus and actual results for top AI companies."""
+    service = ConsensusService()
+    cnt = service.seed_sample_consensus()
+    return jsonify({"status": "success", "seeded_count": cnt, "message": "Consensus sample data successfully seeded"})
+
+# ─── Memory Semiconductor Spot Price Endpoints ───
+
+@api_bp.route("/indicators/memory-spot", methods=["GET"])
+def get_memory_spot():
+    """Retrieve memory spot price summary and historical trend."""
+    indicator_type = request.args.get("type", "SPOT_DRAM_DDR5_16GB")
+    limit = int(request.args.get("limit", 30))
+
+    collector = MemorySpotCollector()
+    summary = collector.get_latest_summary()
+    history = collector.get_spot_history(indicator_type=indicator_type, limit=limit)
+
+    return jsonify({
+        "status": "success",
+        "indicator_type": indicator_type,
+        "indicator_info": MEMORY_SPOT_TYPES.get(indicator_type, {}),
+        "summary": summary,
+        "history": history
+    })
+
+@api_bp.route("/indicators/memory-spot", methods=["POST"])
+def add_memory_spot():
+    """Add a manual memory spot price point."""
+    payload = request.get_json() or {}
+    required = ["indicator_type", "date", "value"]
+    for f in required:
+        if f not in payload:
+            return jsonify({"status": "error", "message": f"Missing required field: {f}"}), 400
+
+    collector = MemorySpotCollector()
+    res = collector.add_spot_entry(
+        indicator_type=payload["indicator_type"],
+        date_str=payload["date"],
+        value=float(payload["value"]),
+        unit=payload.get("unit", "USD"),
+        note=payload.get("note"),
+        source=payload.get("source", "MANUAL")
+    )
+    if res.get("status") == "error":
+        return jsonify(res), 400
+    return jsonify(res)
+
+@api_bp.route("/indicators/memory-spot/seed", methods=["POST"])
+def seed_memory_spot():
+    """Seed 2025~2026 weekly memory spot price series for DDR5, DDR4, NAND, DXI."""
+    collector = MemorySpotCollector()
+    cnt = collector.seed_sample_spot_data()
+    return jsonify({
+        "status": "success",
+        "seeded_count": cnt,
+        "message": f"{cnt} memory spot data points successfully seeded"
+    })
+
+@api_bp.route("/indicators/memory-spot/fetch", methods=["POST"])
+def fetch_memory_spot_api():
+    """Fetch spot prices from public MemoryIndex API."""
+    collector = MemorySpotCollector()
+    res = collector.fetch_public_api()
+    return jsonify(res)
+
+@api_bp.route("/indicators/memory-spot/types", methods=["GET"])
+def get_memory_spot_types():
+    """Retrieve list of available memory spot indicators."""
+    return jsonify({"status": "success", "data": MEMORY_SPOT_TYPES})
+
+

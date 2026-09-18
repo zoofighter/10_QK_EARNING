@@ -47,32 +47,112 @@ class EdgarCollector:
             return None
 
     def download_filing_document(self, cik: str, accession_number: str, primary_doc: str, target_folder: Path):
-        """Download raw filing document (HTML or HTM)."""
+        """Download raw filing document (HTML or HTM) and extract clean readable text."""
         cik_int = str(int(cik))
         acc_nodash = accession_number.replace("-", "")
         url = SEC_ARCHIVE_URL.format(cik_int=cik_int, acc_nodash=acc_nodash, primary_doc=primary_doc)
         self._rate_limit()
 
         try:
-            resp = requests.get(url, headers=self.archive_headers, timeout=20)
+            resp = requests.get(url, headers=self.archive_headers, timeout=25)
             if resp.status_code == 200:
                 target_folder.mkdir(parents=True, exist_ok=True)
                 local_path = target_folder / f"{accession_number}_{primary_doc}"
                 with open(local_path, "wb") as f:
                     f.write(resp.content)
 
-                # Extract cleaned text for search / preview (sample first 100k chars for FTS)
+                # Extract cleaned text by stripping scripts and styles
                 try:
                     soup = BeautifulSoup(resp.content, "lxml")
-                    text = soup.get_text(separator=" ", strip=True)
+                    for s in soup(["script", "style", "noscript", "header", "footer"]):
+                        s.decompose()
+                    # Replace multiple whitespaces/newlines with single whitespace
+                    lines = (line.strip() for line in soup.get_text(separator="\n").splitlines())
+                    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                    text = "\n".join(chunk for chunk in chunks if chunk)
                 except Exception:
                     text = resp.text[:100000]
 
-                return str(local_path), url, text[:150000]
+                return str(local_path), url, text[:300000]
             return None, url, ""
         except Exception as e:
             print(f"[EDGAR] Error downloading document {primary_doc}: {e}")
             return None, url, ""
+
+    def download_single_filing(self, filing_id: int):
+        """Download document and update FTS for an existing filing record."""
+        filing = query_db(
+            """
+            SELECT f.*, e.sec_cik, e.ticker
+            FROM filing f
+            JOIN entity e ON f.entity_id = e.id
+            WHERE f.id = ?
+            """,
+            (filing_id,),
+            one=True
+        )
+        if not filing:
+            return {"status": "error", "message": f"Filing {filing_id} not found"}
+
+        cik = filing.get("sec_cik")
+        acc_num = filing.get("accession_number")
+        form = filing.get("filing_type")
+        if not cik or not acc_num:
+            return {"status": "error", "message": "Missing CIK or Accession Number"}
+
+        # Look up primary document name from SEC submissions
+        meta = self.fetch_submissions_meta(cik)
+        if not meta or "filings" not in meta or "recent" not in meta["filings"]:
+            return {"status": "error", "message": "Could not fetch SEC metadata"}
+
+        recent = meta["filings"]["recent"]
+        acc_list = recent.get("accessionNumber", [])
+        primary_docs = recent.get("primaryDocument", [])
+
+        primary_doc = ""
+        if acc_num in acc_list:
+            idx = acc_list.index(acc_num)
+            if idx < len(primary_docs):
+                primary_doc = primary_docs[idx]
+
+        if not primary_doc:
+            # fallback common naming
+            primary_doc = f"{acc_num}.txt"
+
+        folder = FILINGS_DIR / form
+        local_path, src_url, raw_text = self.download_filing_document(cik, acc_num, primary_doc, folder)
+
+        if not raw_text and not local_path:
+            return {"status": "error", "message": "Failed to download filing document"}
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE filing
+                SET source_url = ?, local_file_path = ?, raw_text = ?, status = 'DOWNLOADED'
+                WHERE id = ?
+                """,
+                (src_url, local_path, raw_text, filing_id)
+            )
+            # Refresh FTS5 index
+            cur.execute("DELETE FROM filing_fts WHERE filing_id = ?", (filing_id,))
+            cur.execute(
+                """
+                INSERT INTO filing_fts (filing_id, ticker, filing_type, fiscal_period, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (filing_id, filing["ticker"], form, f"{filing['fiscal_year']}-{filing['fiscal_quarter']}", raw_text[:50000])
+            )
+
+        return {
+            "status": "success",
+            "filing_id": filing_id,
+            "ticker": filing["ticker"],
+            "form": form,
+            "text_length": len(raw_text),
+            "local_path": local_path
+        }
 
     def collect_for_entity(self, ticker: str, form_types=None, limit=10, download_docs=True):
         """Collect filings for a single ticker."""
@@ -132,7 +212,7 @@ class EdgarCollector:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(entity_id, filing_type, fiscal_year, fiscal_quarter, accession_number)
                     DO UPDATE SET
-                        source_url=excluded.source_url,
+                        source_url=coalesce(excluded.source_url, filing.source_url),
                         local_file_path=coalesce(excluded.local_file_path, filing.local_file_path),
                         raw_text=coalesce(excluded.raw_text, filing.raw_text),
                         status='DOWNLOADED'
@@ -143,10 +223,18 @@ class EdgarCollector:
                         src_url, local_path, raw_text, "DOWNLOADED"
                     )
                 )
-                filing_id = cur.lastrowid or 0
+
+                # Robust filing_id resolution
+                cur.execute(
+                    "SELECT id FROM filing WHERE entity_id = ? AND accession_number = ?",
+                    (entity["id"], acc_num)
+                )
+                f_row = cur.fetchone()
+                filing_id = f_row[0] if f_row else None
 
                 # Update FTS index if text available
                 if raw_text and filing_id:
+                    cur.execute("DELETE FROM filing_fts WHERE filing_id = ?", (filing_id,))
                     cur.execute(
                         """
                         INSERT INTO filing_fts (filing_id, ticker, filing_type, fiscal_period, content)
@@ -161,7 +249,8 @@ class EdgarCollector:
                     "filingDate": f_date,
                     "reportDate": r_date,
                     "fiscalYear": fiscal_year,
-                    "quarter": quarter
+                    "quarter": quarter,
+                    "hasText": bool(raw_text)
                 })
 
         return {"ticker": ticker, "collected": collected, "count": len(collected)}

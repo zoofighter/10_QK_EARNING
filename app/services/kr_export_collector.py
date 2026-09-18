@@ -150,3 +150,36 @@ class KoreaExportCollector:
             (limit,)
         )
         return rows
+
+    def seed_sample_export_data(self) -> int:
+        """Seed representative 10-day semiconductor export stats (2025~2026)."""
+        samples = [
+            # 2026년
+            {"year": 2026, "month": 9, "period": "상순", "semi": 4120, "yoy": 42.5, "total": 18500},
+            {"year": 2026, "month": 8, "period": "하순", "semi": 4580, "yoy": 38.2, "total": 19800},
+            {"year": 2026, "month": 8, "period": "중순", "semi": 3890, "yoy": 36.1, "total": 17200},
+            {"year": 2026, "month": 8, "period": "상순", "semi": 3750, "yoy": 41.0, "total": 16900},
+            {"year": 2026, "month": 7, "period": "하순", "semi": 4320, "yoy": 49.8, "total": 19100},
+            {"year": 2026, "month": 7, "period": "중순", "semi": 3620, "yoy": 45.3, "total": 16400},
+            {"year": 2026, "month": 7, "period": "상순", "semi": 3410, "yoy": 48.2, "total": 15800},
+            {"year": 2026, "month": 6, "period": "하순", "semi": 4890, "yoy": 52.1, "total": 21000},
+            {"year": 2026, "month": 6, "period": "중순", "semi": 3710, "yoy": 50.4, "total": 16800},
+            {"year": 2026, "month": 6, "period": "상순", "semi": 3520, "yoy": 53.0, "total": 16200},
+            {"year": 2026, "month": 5, "period": "하순", "semi": 4200, "yoy": 46.5, "total": 18900},
+            {"year": 2026, "month": 5, "period": "중순", "semi": 3380, "yoy": 44.2, "total": 15300},
+        ]
+
+        count = 0
+        for s in samples:
+            self.add_10day_report(
+                year=s["year"],
+                month=s["month"],
+                period=s["period"],
+                semi_export_amt=s["semi"],
+                semi_yoy_pct=s["yoy"],
+                total_export_amt=s["total"],
+                note=f"{s['year']}년 {s['month']}월 {s['period']} 관세청 잠정치 (HS 8542)"
+            )
+            count += 1
+        return count
+

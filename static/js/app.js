@@ -29,7 +29,12 @@ function switchTab(tabId) {
   if (tabId === "tab-companies") loadEntities();
   if (tabId === "tab-filings") loadFilingsTable();
   if (tabId === "tab-calendar") loadCalendarTable();
-  if (tabId === "tab-indicators") loadKrExportData();
+  if (tabId === "tab-consensus") loadConsensusData();
+  if (tabId === "tab-indicators") {
+    loadMemorySpotData();
+    loadKrExportData();
+    loadKrExportCombinedChart();
+  }
 }
 
 // 1. Overview Loader
@@ -357,28 +362,115 @@ function renderPriceChart(prices) {
   });
 }
 
-// 6. Filing Excerpt Modal
-async function openFilingModal(filingId) {
-  try {
-    const res = await fetch(`/api/filings/${filingId}`);
-    const json = await res.json();
-    if (json.status !== "success") return;
+// 6. Filing Excerpt & Full-Text Modal
+let currentFilingId = null;
+let fullFilingText = "";
 
-    const f = json.data;
+async function openFilingModal(filingId) {
+  currentFilingId = filingId;
+  const contentEl = document.getElementById("modal-filing-content");
+  const charCountEl = document.getElementById("modal-filing-char-count");
+  const filterInput = document.getElementById("modal-text-filter");
+  const rawLink = document.getElementById("modal-filing-raw-link");
+  const downloadBtn = document.getElementById("modal-filing-download-btn");
+
+  if (filterInput) filterInput.value = "";
+  if (contentEl) contentEl.textContent = "원문 텍스트를 불러오는 중...";
+  if (charCountEl) charCountEl.textContent = "불러오는 중...";
+  if (rawLink) rawLink.style.display = "none";
+
+  document.getElementById("filing-modal").classList.add("active");
+
+  try {
+    // 1. Fetch metadata
+    const metaRes = await fetch(`/api/filings/${filingId}`);
+    const metaJson = await metaRes.json();
+    if (metaJson.status !== "success") return;
+    const f = metaJson.data;
+
     const badge = document.getElementById("modal-filing-badge");
     badge.className = `filing-badge filing-${f.filing_type}`;
     badge.textContent = f.filing_type;
 
-    document.getElementById("modal-filing-title").textContent = `${f.ticker} - ${f.fiscal_year} ${f.fiscal_quarter}`;
+    document.getElementById("modal-filing-title").textContent = `${f.ticker} - ${f.fiscal_year} ${f.fiscal_quarter} (${f.filing_type})`;
     document.getElementById("modal-filing-meta").innerHTML = `
-      제출일: ${f.filed_date} | Accession No: ${f.accession_number || '-'} |
-      <a href="${f.source_url || '#'}" target="_blank" style="color:var(--accent-cyan); text-decoration:underline;">SEC 원본 링크 ↗</a>
+      제출일: ${f.filed_date} | 대상기간: ${f.period_end_date || '-'} | Accession No: ${f.accession_number || '-'} |
+      <a href="${f.source_url || '#'}" target="_blank" style="color:var(--accent-cyan); text-decoration:underline;">SEC EDGAR 링크 ↗</a>
     `;
 
-    document.getElementById("modal-filing-content").textContent = f.raw_text_preview || "저장된 텍스트 내용이 없습니다.";
-    document.getElementById("filing-modal").classList.add("active");
+    // Local HTML Raw File link if available
+    if (f.has_local_file && rawLink) {
+      rawLink.href = `/api/filings/${filingId}/raw`;
+      rawLink.style.display = "inline-flex";
+    }
+
+    // 2. Fetch Full Text
+    const textRes = await fetch(`/api/filings/${filingId}/text`);
+    const textJson = await textRes.json();
+    fullFilingText = (textJson.data && textJson.data.text) || f.raw_text_preview || "(원문 텍스트가 없습니다. '원문 다운로드' 버튼을 클릭해 주세요.)";
+
+    contentEl.textContent = fullFilingText;
+    charCountEl.textContent = `전체 ${Number(fullFilingText.length).toLocaleString()}자`;
+
   } catch (err) {
-    console.error("Failed to load filing details:", err);
+    console.error("Failed to load filing full text:", err);
+    contentEl.textContent = "오류 발생: 텍스트를 불러오지 못했습니다.";
+  }
+}
+
+async function downloadCurrentFiling() {
+  if (!currentFilingId) return;
+  const btn = document.getElementById("modal-filing-download-btn");
+  const origText = btn.textContent;
+  btn.textContent = "다운로드 중...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/filings/${currentFilingId}/download`, { method: "POST" });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ ${json.ticker} ${json.form} 원문 다운로드 및 FTS 색인이 완료되었습니다! (${json.text_length}자 추출)`);
+      // Reload current modal text
+      openFilingModal(currentFilingId);
+      loadFilingsTable(); // Refresh archive table
+    } else {
+      alert(`❌ 다운로드 실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
+}
+
+function copyFilingText() {
+  if (!fullFilingText) return;
+  navigator.clipboard.writeText(fullFilingText).then(() => {
+    alert("📋 공시 전문 텍스트가 클립보드에 복사되었습니다.");
+  }).catch(err => {
+    console.error("Copy failed:", err);
+  });
+}
+
+function filterModalText(query) {
+  const contentEl = document.getElementById("modal-filing-content");
+  if (!contentEl || !fullFilingText) return;
+
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    contentEl.textContent = fullFilingText;
+    return;
+  }
+
+  // Find occurrences with surrounding context
+  const lines = fullFilingText.split("\n");
+  const matched = lines.filter(line => line.toLowerCase().includes(q));
+
+  if (matched.length > 0) {
+    contentEl.textContent = `[검색어 '${query}' 포함 ${matched.length}개 단락]\n\n` + matched.join("\n\n---\n\n");
+  } else {
+    contentEl.textContent = `[검색어 '${query}'에 일치하는 내용이 없습니다.]`;
   }
 }
 
@@ -695,3 +787,527 @@ document.addEventListener("change", (e) => {
     });
   }
 });
+
+// ─── Combined 10-Day KR Export Chart (Amt + YoY) ───
+async function loadKrExportCombinedChart() {
+  const ctx = document.getElementById("kr-export-chart");
+  if (!ctx) return;
+
+  try {
+    const [amtRes, yoyRes] = await Promise.all([
+      fetch("/api/indicators/kr-export?type=KR_SEMI_EXPORT_AMT&limit=15"),
+      fetch("/api/indicators/kr-export?type=KR_SEMI_EXPORT_YOY&limit=15")
+    ]);
+    const amtJson = await amtRes.json();
+    const yoyJson = await yoyRes.json();
+
+    const amtData = amtJson.data || [];
+    const yoyData = yoyJson.data || [];
+
+    if (amtData.length === 0 && yoyData.length === 0) return;
+
+    if (krExportChart) krExportChart.destroy();
+
+    const labels = amtData.map(d => d.date);
+    const amounts = amtData.map(d => d.value);
+
+    // Map YoY by date
+    const yoyMap = {};
+    yoyData.forEach(d => { yoyMap[d.date] = d.value; });
+    const yoyValues = labels.map(date => yoyMap[date] !== undefined ? yoyMap[date] : null);
+
+    krExportChart = new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: "bar",
+            label: "반도체 수출액 (M USD)",
+            data: amounts,
+            backgroundColor: "rgba(245, 158, 11, 0.4)",
+            borderColor: "#F59E0B",
+            borderWidth: 1.5,
+            borderRadius: 4,
+            yAxisID: "y"
+          },
+          {
+            type: "line",
+            label: "YoY 증감률 (%)",
+            data: yoyValues,
+            borderColor: "#10B981",
+            backgroundColor: "transparent",
+            borderWidth: 2.5,
+            pointBackgroundColor: "#10B981",
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.3,
+            yAxisID: "y1"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: "#9CA3AF", font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                if (ctx.dataset.type === "bar") {
+                  return `수출액: ${Number(ctx.parsed.y).toLocaleString()} M USD`;
+                }
+                return `YoY: ${ctx.parsed.y > 0 ? '+' : ''}${ctx.parsed.y.toFixed(1)}%`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: "rgba(255,255,255,0.04)" },
+            ticks: { color: "#9CA3AF", font: { size: 10 } }
+          },
+          y: {
+            type: "linear",
+            display: true,
+            position: "left",
+            grid: { color: "rgba(255,255,255,0.05)" },
+            ticks: {
+              color: "#F59E0B",
+              font: { size: 10 },
+              callback: v => `${(v / 1000).toFixed(1)}B`
+            }
+          },
+          y1: {
+            type: "linear",
+            display: true,
+            position: "right",
+            grid: { drawOnChartArea: false },
+            ticks: {
+              color: "#10B981",
+              font: { size: 10 },
+              callback: v => `${v}%`
+            }
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Failed to render combined KR export chart:", err);
+  }
+}
+
+// ─── 8. Consensus & Beat/Miss Dashboard ───
+let rawConsensusMatrix = null;
+let currentConsensusMetric = "all";
+
+async function loadConsensusData() {
+  const tbody = document.getElementById("consensus-matrix-tbody");
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">컨센서스 및 실적 데이터를 불러오는 중...</td></tr>`;
+
+  try {
+    const res = await fetch("/api/consensus/matrix");
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    rawConsensusMatrix = json.data;
+    renderConsensusMatrix();
+  } catch (err) {
+    console.error("Failed to load consensus matrix:", err);
+  }
+}
+
+function setConsensusMetricFilter(metric) {
+  currentConsensusMetric = metric;
+  document.querySelectorAll("#consensus-metric-selector .layer-pill").forEach(btn => {
+    btn.classList.remove("active");
+  });
+  event.target.classList.add("active");
+  renderConsensusMatrix();
+}
+
+function renderConsensusMatrix() {
+  if (!rawConsensusMatrix) return;
+
+  const { quarters, companies } = rawConsensusMatrix;
+  const thead = document.getElementById("consensus-matrix-thead");
+  const tbody = document.getElementById("consensus-matrix-tbody");
+
+  if (!thead || !tbody) return;
+
+  // Render headers
+  thead.innerHTML = `
+    <tr>
+      <th style="min-width: 140px;">기업 / 티커</th>
+      <th style="min-width: 80px;">레이어</th>
+      ${quarters.map(q => `<th style="text-align:center; min-width: 110px;">${q}</th>`).join("")}
+    </tr>
+  `;
+
+  if (!companies || companies.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${quarters.length + 2}" style="text-align:center; color:var(--text-muted); padding:2rem;">등록된 컨센서스 데이터가 없습니다. 상단의 '🔄 샘플 데이터 로드'를 클릭해 보세요.</td></tr>`;
+    return;
+  }
+
+  // Calculate KPIs
+  let totalEvaluated = 0;
+  let totalBeat = 0;
+  let return1dSum = 0;
+  let return1dCount = 0;
+
+  companies.forEach(c => {
+    Object.values(c.quarters).forEach(qData => {
+      ["revenue", "eps"].forEach(m => {
+        if (qData[m] && qData[m].status && qData[m].status !== "UNKNOWN") {
+          totalEvaluated++;
+          if (qData[m].status === "BEAT") totalBeat++;
+          if (qData[m].ret_1d !== null && qData[m].ret_1d !== undefined) {
+            return1dSum += qData[m].ret_1d;
+            return1dCount++;
+          }
+        }
+      });
+    });
+  });
+
+  const beatRateEl = document.getElementById("consensus-kpi-beat-rate");
+  const avgReturnEl = document.getElementById("consensus-kpi-avg-return");
+  const compCountEl = document.getElementById("consensus-kpi-company-count");
+
+  if (beatRateEl && totalEvaluated > 0) {
+    const rate = ((totalBeat / totalEvaluated) * 100).toFixed(1);
+    beatRateEl.textContent = `${rate}%`;
+    beatRateEl.nextElementSibling.textContent = `최근 평가 실적 (${totalBeat} / ${totalEvaluated}건)`;
+  }
+  if (avgReturnEl && return1dCount > 0) {
+    const avg = (return1dSum / return1dCount).toFixed(1);
+    avgReturnEl.textContent = `${avg > 0 ? '+' : ''}${avg}%`;
+  }
+  if (compCountEl) {
+    compCountEl.textContent = `${companies.length}개사`;
+  }
+
+  // Render Rows
+  tbody.innerHTML = companies.map(c => {
+    const short = getLayerShort(c.layer_code);
+    const cells = quarters.map(qKey => {
+      const qData = c.quarters[qKey] || {};
+      const rev = qData.revenue;
+      const eps = qData.eps;
+
+      if (!rev && !eps) {
+        return `<td><div style="color:var(--text-muted); text-align:center; font-size:0.75rem;">-</div></td>`;
+      }
+
+      let contentHtml = "";
+
+      if (currentConsensusMetric === "all") {
+        contentHtml = `
+          ${renderMetricMiniBadge("Rev", rev)}
+          ${renderMetricMiniBadge("EPS", eps)}
+        `;
+      } else if (currentConsensusMetric === "revenue") {
+        contentHtml = renderMetricDetailCell(rev, "M_USD");
+      } else if (currentConsensusMetric === "eps") {
+        contentHtml = renderMetricDetailCell(eps, "USD");
+      }
+
+      return `<td>${contentHtml}</td>`;
+    }).join("");
+
+    return `
+      <tr>
+        <td>
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <strong>${c.ticker}</strong>
+            <span style="font-size:0.75rem; color:var(--text-muted);">${c.name_ko || c.name_en}</span>
+          </div>
+        </td>
+        <td><span class="layer-tag ${short}">${short}</span></td>
+        ${cells}
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderMetricMiniBadge(label, item) {
+  if (!item || !item.status || item.status === "UNKNOWN") {
+    return `<div style="font-size:0.72rem; color:var(--text-muted); text-align:center;">${label}: 미입력</div>`;
+  }
+
+  const cls = item.status === "BEAT" ? "pill-beat" : (item.status === "MISS" ? "pill-miss" : "pill-inline");
+  const sign = item.surprise_pct > 0 ? "+" : "";
+  const priceReaction = item.ret_1d !== null && item.ret_1d !== undefined
+    ? `<span class="price-reaction-tag">1d: ${item.ret_1d > 0 ? '+' : ''}${item.ret_1d}%</span>`
+    : "";
+
+  return `
+    <div class="matrix-cell cell-${item.status.toLowerCase()}">
+      <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+        <span style="font-size:0.7rem; color:var(--text-secondary);">${label}</span>
+        <span class="beat-miss-pill ${cls}">${item.status}</span>
+      </div>
+      <div class="surprise-pct ${item.surprise_pct > 0 ? 'pos' : (item.surprise_pct < 0 ? 'neg' : 'zero')}">
+        ${sign}${item.surprise_pct}%
+      </div>
+      ${priceReaction}
+    </div>
+  `;
+}
+
+function renderMetricDetailCell(item, unit) {
+  if (!item || !item.status || item.status === "UNKNOWN") {
+    return `<div style="font-size:0.75rem; color:var(--text-muted); text-align:center;">-</div>`;
+  }
+
+  const cls = item.status === "BEAT" ? "pill-beat" : (item.status === "MISS" ? "pill-miss" : "pill-inline");
+  const sign = item.surprise_pct > 0 ? "+" : "";
+
+  return `
+    <div class="matrix-cell cell-${item.status.toLowerCase()}" style="padding: 0.5rem 0.6rem;">
+      <span class="beat-miss-pill ${cls}">${item.status} (${sign}${item.surprise_pct}%)</span>
+      <div style="font-size:0.75rem; color:#fff; font-family:'JetBrains Mono',monospace; margin-top:0.2rem;">
+        실제: <strong>${item.actual}</strong>
+      </div>
+      <div style="font-size:0.7rem; color:var(--text-muted);">
+        예상: ${item.consensus}
+      </div>
+    </div>
+  `;
+}
+
+function openConsensusModal() {
+  document.getElementById("consensus-modal").classList.add("active");
+}
+
+async function submitConsensusForm(e) {
+  e.preventDefault();
+  const ticker = document.getElementById("consensus-ticker").value;
+  const year = document.getElementById("consensus-year").value;
+  const quarter = document.getElementById("consensus-quarter").value;
+  const metric = document.getElementById("consensus-metric").value;
+  const consensusVal = document.getElementById("consensus-val").value;
+  const actualVal = document.getElementById("actual-val").value;
+  const dateVal = document.getElementById("consensus-date").value;
+
+  const payload = {
+    ticker,
+    fiscal_year: year,
+    fiscal_quarter: quarter,
+    metric_type: metric,
+    consensus_value: parseFloat(consensusVal)
+  };
+
+  if (actualVal) payload.actual_value = parseFloat(actualVal);
+  if (dateVal) payload.announcement_date = dateVal;
+
+  try {
+    const res = await fetch("/api/consensus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ ${ticker} ${year}-${quarter} ${metric} 컨센서스가 저장되었습니다! (판정: ${json.beat_miss_status || '입력완료'})`);
+      closeModal("consensus-modal");
+      loadConsensusData();
+    } else {
+      alert(`❌ 저장 실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  }
+}
+
+async function seedConsensusData() {
+  try {
+    const res = await fetch("/api/consensus/seed", { method: "POST" });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ 주요 AI 기업 샘플 컨센서스(${json.seeded_count}건)가 적재되었습니다!`);
+      loadConsensusData();
+    } else {
+      alert(`실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  }
+}
+
+// ─── 9. Memory Semiconductor Spot Price Dashboard ───
+let memorySpotChart = null;
+let currentSpotType = "SPOT_DRAM_DDR5_16GB";
+
+async function loadMemorySpotData() {
+  try {
+    const res = await fetch(`/api/indicators/memory-spot?type=${currentSpotType}&limit=30`);
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    renderMemorySpotSummary(json.summary);
+    renderMemorySpotChart(json.history, json.indicator_info);
+  } catch (err) {
+    console.error("Failed to load memory spot data:", err);
+  }
+}
+
+function renderMemorySpotSummary(summary) {
+  if (!summary) return;
+
+  const ddr5 = summary["SPOT_DRAM_DDR5_16GB"];
+  const ddr4 = summary["SPOT_DRAM_DDR4_8GB"];
+  const nand = summary["SPOT_NAND_TLC_512GB"];
+  const dxi = summary["INDEX_DXI"];
+
+  const updateCard = (valId, subId, item, isPoint = false) => {
+    const valEl = document.getElementById(valId);
+    const subEl = document.getElementById(subId);
+    if (!valEl || !subEl || !item) return;
+
+    if (item.latest_price !== null && item.latest_price !== undefined) {
+      valEl.textContent = isPoint ? Number(item.latest_price).toLocaleString() : `$${Number(item.latest_price).toFixed(2)}`;
+      const sign = item.change_pct >= 0 ? "▲ +" : "▼ ";
+      const color = item.change_pct >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)";
+      subEl.textContent = `${sign}${item.change_pct}% (전주 대비)`;
+      subEl.style.color = color;
+    } else {
+      valEl.textContent = "-";
+      subEl.textContent = "데이터 없음";
+      subEl.style.color = "var(--text-muted)";
+    }
+  };
+
+  updateCard("val-spot-ddr5", "sub-spot-ddr5", ddr5);
+  updateCard("val-spot-ddr4", "sub-spot-ddr4", ddr4);
+  updateCard("val-spot-nand", "sub-spot-nand", nand);
+  updateCard("val-spot-dxi", "sub-spot-dxi", dxi, true);
+}
+
+function switchSpotChart(type) {
+  currentSpotType = type;
+  document.querySelectorAll("#spot-indicator-selector .layer-pill").forEach(btn => {
+    btn.classList.remove("active");
+  });
+  if (event && event.target) {
+    event.target.classList.add("active");
+  }
+
+  // Update chart title
+  const titleMap = {
+    "SPOT_DRAM_DDR5_16GB": "📈 DDR5 16Gb 스팟 현물 가격 추이 (USD)",
+    "SPOT_DRAM_DDR4_8GB": "📈 DDR4 8Gb 스팟 현물 가격 추이 (USD)",
+    "SPOT_NAND_TLC_512GB": "📈 NAND 512Gb TLC 스팟 현물 가격 추이 (USD)",
+    "INDEX_DXI": "📈 DXI 메모리 반도체 종합 지수 추이 (Points)"
+  };
+  const titleEl = document.getElementById("spot-chart-title");
+  if (titleEl && titleMap[type]) {
+    titleEl.innerHTML = `<span>📈</span> ${titleMap[type]}`;
+  }
+
+  loadMemorySpotData();
+}
+
+function renderMemorySpotChart(history, info) {
+  const ctx = document.getElementById("memory-spot-chart");
+  if (!ctx) return;
+
+  if (memorySpotChart) {
+    memorySpotChart.destroy();
+  }
+
+  if (!history || history.length === 0) {
+    const context = ctx.getContext("2d");
+    context.clearRect(0, 0, ctx.width, ctx.height);
+    context.fillStyle = "#6B7280";
+    context.font = "14px Inter";
+    context.textAlign = "center";
+    context.fillText("현물 가격 데이터가 없습니다. 상단 '현물가 시드 로드'를 클릭하세요.", ctx.width / 2 || 200, 130);
+    return;
+  }
+
+  const labels = history.map(d => d.date);
+  const values = history.map(d => d.value);
+  const isPoints = info && info.unit === "Points";
+  const lineColor = isPoints ? "#818CF8" : "#38BDF8";
+
+  memorySpotChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: `${(info && info.name_ko) || currentSpotType} (${(info && info.unit) || 'USD'})`,
+        data: values,
+        borderColor: lineColor,
+        backgroundColor: lineColor + "15",
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 4,
+        pointHoverRadius: 7,
+        pointBackgroundColor: lineColor
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color: "#9CA3AF", font: { size: 11 } }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => isPoints ? `${Number(ctx.parsed.y).toLocaleString()} Points` : `$${ctx.parsed.y.toFixed(2)} USD`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: "rgba(255,255,255,0.04)" },
+          ticks: { color: "#9CA3AF", maxTicksLimit: 12, font: { size: 10 } }
+        },
+        y: {
+          grid: { color: "rgba(255,255,255,0.05)" },
+          ticks: {
+            color: "#9CA3AF",
+            font: { size: 10 },
+            callback: (v) => isPoints ? `${(v / 1000).toFixed(0)}k` : `$${v.toFixed(2)}`
+          }
+        }
+      }
+    }
+  });
+}
+
+async function seedMemorySpotData() {
+  try {
+    const res = await fetch("/api/indicators/memory-spot/seed", { method: "POST" });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ 메모리 현물 가격 시계열 데이터(${json.seeded_count}건)가 적재되었습니다!`);
+      loadMemorySpotData();
+    } else {
+      alert(`실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  }
+}
+
+async function fetchMemorySpotApi() {
+  try {
+    const res = await fetch("/api/indicators/memory-spot/fetch", { method: "POST" });
+    const json = await res.json();
+    alert(`동기화 결과: ${json.message || `완료 (${json.imported || 0}건 저장)`}`);
+    loadMemorySpotData();
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  }
+}
+
+
