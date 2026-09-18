@@ -230,15 +230,15 @@ class ConsensusService:
     def seed_sample_consensus(self) -> int:
         """Seed realistic consensus history for flagship AI companies (NVDA, TSM, MSFT, AMD, GOOGL)."""
         sample_data = [
-            # NVDA
-            {"ticker": "NVDA", "year": "2026", "quarter": "Q2", "metric": "revenue", "consensus": 38200, "actual": 39500, "date": "2026-08-27"},
-            {"ticker": "NVDA", "year": "2026", "quarter": "Q2", "metric": "eps", "consensus": 0.82, "actual": 0.88, "date": "2026-08-27"},
-            {"ticker": "NVDA", "year": "2026", "quarter": "Q1", "metric": "revenue", "consensus": 33100, "actual": 35082, "date": "2026-05-22"},
-            {"ticker": "NVDA", "year": "2026", "quarter": "Q1", "metric": "eps", "consensus": 0.71, "actual": 0.76, "date": "2026-05-22"},
-            {"ticker": "NVDA", "year": "2025", "quarter": "Q4", "metric": "revenue", "consensus": 28600, "actual": 30040, "date": "2026-02-26"},
-            {"ticker": "NVDA", "year": "2025", "quarter": "Q4", "metric": "eps", "consensus": 0.62, "actual": 0.68, "date": "2026-02-26"},
-            {"ticker": "NVDA", "year": "2025", "quarter": "Q3", "metric": "revenue", "consensus": 24500, "actual": 26044, "date": "2025-11-20"},
-            {"ticker": "NVDA", "year": "2025", "quarter": "Q3", "metric": "eps", "consensus": 0.54, "actual": 0.60, "date": "2025-11-20"},
+            # NVDA (From official earnings releases & consensus estimates)
+            {"ticker": "NVDA", "year": "2026", "quarter": "Q2", "metric": "revenue", "consensus": 91900, "actual": 96200, "date": "2026-08-26"},
+            {"ticker": "NVDA", "year": "2026", "quarter": "Q2", "metric": "eps", "consensus": 2.08, "actual": 2.22, "date": "2026-08-26"},
+            {"ticker": "NVDA", "year": "2026", "quarter": "Q1", "metric": "revenue", "consensus": 79190, "actual": 81600, "date": "2026-05-20"},
+            {"ticker": "NVDA", "year": "2026", "quarter": "Q1", "metric": "eps", "consensus": 1.77, "actual": 1.87, "date": "2026-05-20"},
+            {"ticker": "NVDA", "year": "2025", "quarter": "Q4", "metric": "revenue", "consensus": 65560, "actual": 68100, "date": "2026-02-25"},
+            {"ticker": "NVDA", "year": "2025", "quarter": "Q4", "metric": "eps", "consensus": 1.52, "actual": 1.62, "date": "2026-02-25"},
+            {"ticker": "NVDA", "year": "2025", "quarter": "Q3", "metric": "revenue", "consensus": 54890, "actual": 57000, "date": "2025-11-19"},
+            {"ticker": "NVDA", "year": "2025", "quarter": "Q3", "metric": "eps", "consensus": 1.25, "actual": 1.30, "date": "2025-11-19"},
 
             # TSM
             {"ticker": "TSM", "year": "2026", "quarter": "Q2", "metric": "revenue", "consensus": 25200, "actual": 26100, "date": "2026-07-18"},
