@@ -51,6 +51,9 @@ function switchTab(tabId) {
   if (tabId === "tab-transcripts") {
     loadTranscriptsList();
   }
+  if (tabId === "tab-reports") {
+    loadReportStudio();
+  }
   if (tabId === "tab-indicators") {
     loadMemorySpotData();
     loadKrExportData();
@@ -2289,3 +2292,352 @@ async function seedTranscriptsData() {
     alert(`오류: ${err.message}`);
   }
 }
+
+// ========================================================
+// 9. AI Report Studio & Agent Logic
+// ========================================================
+
+let reportTemplates = {};
+let selectedPeerTickers = new Set(["000660.KS", "NVDA"]);
+let currentGeneratedReportMarkdown = "";
+
+const ALL_PEER_CANDIDATES = [
+  { ticker: "000660.KS", name: "SK하이닉스" },
+  { ticker: "NVDA", name: "엔비디아" },
+  { ticker: "TSM", name: "TSMC" },
+  { ticker: "005930.KS", name: "삼성전자" },
+  { ticker: "MSFT", name: "마이크로소프트" },
+  { ticker: "AVGO", name: "브로드컴" },
+  { ticker: "AMD", name: "AMD" },
+  { ticker: "MU", name: "마이크론" },
+  { ticker: "ASML", name: "ASML" },
+  { ticker: "VRT", name: "버티브" },
+  { ticker: "GOOGL", name: "구글" },
+  { ticker: "AMZN", name: "아마존" },
+  { ticker: "META", name: "메타" }
+];
+
+async function loadReportStudio() {
+  await checkReportEngineStatus();
+  await loadReportTemplates();
+  renderPeerChips();
+  renderChapterCheckboxes();
+}
+
+async function checkReportEngineStatus() {
+  try {
+    const res = await fetch("/api/reports/engine-status");
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    const data = json.data;
+    const badge = document.getElementById("report-engine-status-badge");
+    const engineSelect = document.getElementById("report-engine-select");
+
+    if (badge && data.gemini && data.gemini.available) {
+      badge.innerHTML = `<span class="status-dot"></span><span>Gemini 2.5 Flash 준비 완료</span>`;
+      badge.style.color = "var(--accent-emerald)";
+      badge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+      badge.style.background = "rgba(16, 185, 129, 0.12)";
+    }
+
+    if (engineSelect && data.ollama && data.ollama.available) {
+      const ollamaOpt = engineSelect.querySelector("option[value='ollama']");
+      if (ollamaOpt) {
+        ollamaOpt.textContent = `💻 로컬 Ollama 온라인 (${data.ollama.models.length}개 모델 감지)`;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch engine status:", err);
+  }
+}
+
+async function loadReportTemplates() {
+  try {
+    const res = await fetch("/api/reports/templates");
+    const json = await res.json();
+    if (json.status === "success" && json.templates) {
+      reportTemplates = json.templates;
+    }
+  } catch (err) {
+    console.warn("Could not fetch templates:", err);
+  }
+}
+
+function renderPeerChips() {
+  const container = document.getElementById("report-peer-chips-container");
+  if (!container) return;
+
+  const targetTicker = document.getElementById("report-target-ticker")?.value || "";
+
+  container.innerHTML = ALL_PEER_CANDIDATES.map(p => {
+    if (p.ticker === targetTicker) return "";
+    const isActive = selectedPeerTickers.has(p.ticker);
+    return `
+      <div class="peer-chip ${isActive ? 'active' : ''}" onclick="togglePeerChip('${p.ticker}')">
+        <span>${isActive ? '✓' : '+'}</span>
+        <span>${p.ticker}</span>
+        <span style="font-size:0.7rem; color:var(--text-muted);">${p.name}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+function togglePeerChip(ticker) {
+  if (selectedPeerTickers.has(ticker)) {
+    selectedPeerTickers.delete(ticker);
+  } else {
+    selectedPeerTickers.add(ticker);
+  }
+  renderPeerChips();
+}
+
+function handleTemplateSelectChange(templateKey) {
+  renderChapterCheckboxes(templateKey);
+}
+
+function renderChapterCheckboxes(templateKey = "cross_chain") {
+  const container = document.getElementById("report-chapters-container");
+  if (!container) return;
+
+  const tpl = reportTemplates[templateKey] || {
+    chapters: [
+      "1. Executive Summary (핵심 결론 및 시사점 3줄 요약)",
+      "2. 대상 기업 최근 실적 분석 (매출, 영업이익률, CapEx 확정치 테이블)",
+      "3. 밸류체인 전·후방 기업과의 교차 대조 (경쟁사 점유율 및 고객사 수요)",
+      "4. 어닝콜 경영진 발언 및 시장 핵심 의구심(Q&A) 검증",
+      "5. 산업 선행지표(TSMC 월매출, 메모리 현물가, 수출통계) 연계 시그널",
+      "6. 향후 실적 전망 및 리스크 요인"
+    ]
+  };
+
+  container.innerHTML = tpl.chapters.map((ch, idx) => `
+    <label class="chapter-checkbox-row">
+      <input type="checkbox" class="report-chapter-cb" value="${ch}" checked style="accent-color: var(--accent-primary);">
+      <span>${ch}</span>
+    </label>
+  `).join("");
+}
+
+function handleEngineChange(engineVal) {
+  const pill = document.getElementById("report-viewer-engine-pill");
+  if (pill) {
+    pill.textContent = engineVal === "gemini" ? "Gemini 2.5 Flash" : "Local Qwen 2.5 (Ollama)";
+  }
+}
+
+async function submitGenerateReport() {
+  const targetTicker = document.getElementById("report-target-ticker")?.value || "005930.KS";
+  const peerTickers = Array.from(selectedPeerTickers);
+
+  const chapterCheckboxes = document.querySelectorAll(".report-chapter-cb:checked");
+  const chapters = Array.from(chapterCheckboxes).map(cb => cb.value);
+
+  if (chapters.length === 0) {
+    alert("최소 1개 이상의 목차 챕터를 선택해 주세요.");
+    return;
+  }
+
+  const toneStyle = document.getElementById("report-tone-select")?.value || "analyst";
+  const timeframe = document.getElementById("report-timeframe-select")?.value || "latest";
+  const userNotes = document.getElementById("report-user-notes")?.value || "";
+  const engine = document.getElementById("report-engine-select")?.value || "gemini";
+
+  const btn = document.getElementById("btn-generate-report");
+  const activityContainer = document.getElementById("report-activity-container");
+  const activityPills = document.getElementById("report-activity-pills");
+  const contentBody = document.getElementById("report-content-body");
+  const viewerBadge = document.getElementById("report-viewer-badge");
+  const viewerTitle = document.getElementById("report-viewer-title");
+
+  if (viewerBadge) viewerBadge.textContent = targetTicker;
+  if (viewerTitle) viewerTitle.textContent = `${targetTicker} 교차 심층 분석 보고서`;
+
+  // UI Loading State
+  btn.disabled = true;
+  btn.innerHTML = `<span class="status-dot" style="background:#fff;"></span> 에이전트 팩트 데이터 탐색 중...`;
+
+  if (activityContainer) activityContainer.style.display = "block";
+  if (activityPills) {
+    activityPills.innerHTML = `
+      <div class="report-activity-pill"><span>🔍</span><span>${targetTicker} 및 피어 그룹 데이터 분석 착수...</span></div>
+    `;
+  }
+
+  contentBody.innerHTML = `
+    <div style="text-align: center; color: var(--text-secondary); padding: 5rem 1rem;">
+      <div style="font-size: 2.2rem; margin-bottom: 1rem; animation: pulse 1.5s infinite;">🧠</div>
+      <h4 style="color: #fff; margin-bottom: 0.5rem;">AI 에이전트가 데이터베이스를 직접 조회하고 있습니다...</h4>
+      <p style="font-size: 0.85rem; color: var(--text-muted);">재무제표 팩트 테이블 확인 · 타사 어닝콜 Q&A 발언 추출 · 선행지표 연계 추론 중</p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch("/api/reports/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_ticker: targetTicker,
+        peer_tickers: peerTickers,
+        chapters: chapters,
+        user_notes: userNotes,
+        timeframe: timeframe,
+        tone_style: toneStyle,
+        engine: engine
+      })
+    });
+
+    const json = await res.json();
+
+    if (json.status !== "success") {
+      throw new Error(json.message || "보고서 생성 실패");
+    }
+
+    currentGeneratedReportMarkdown = json.report_markdown || "";
+
+    // Render Activity Log Pills
+    if (activityPills && json.tools_used) {
+      activityPills.innerHTML = json.tools_used.map(t => {
+        let icon = "🔍";
+        if (t.tool.includes("financial")) icon = "📊";
+        if (t.tool.includes("transcript")) icon = "🎙️";
+        if (t.tool.includes("indicator")) icon = "🌐";
+        if (t.tool.includes("consensus")) icon = "🎯";
+        return `
+          <div class="report-activity-pill">
+            <span>${icon}</span>
+            <span>${t.summary || t.tool}</span>
+            <span style="color:var(--accent-emerald); font-weight:700;">✓</span>
+          </div>
+        `;
+      }).join("") + `<div class="report-activity-pill" style="background:rgba(16,185,129,0.15); color:var(--accent-emerald); border-color:rgba(16,185,129,0.4);"><span>✍️</span><span>보고서 작성 완료</span></div>`;
+    }
+
+    // Render Formatted Markdown
+    contentBody.innerHTML = renderMarkdownToHtml(currentGeneratedReportMarkdown);
+
+  } catch (err) {
+    alert(`보고서 생성 오류: ${err.message}`);
+    contentBody.innerHTML = `
+      <div style="text-align: center; color: var(--accent-rose); padding: 4rem;">
+        <h4>❌ 생성 중 오류가 발생했습니다.</h4>
+        <p style="font-size: 0.85rem; margin-top: 0.5rem;">${err.message}</p>
+      </div>
+    `;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `🚀 맞춤형 교차 보고서 생성`;
+  }
+}
+
+function renderMarkdownToHtml(md) {
+  if (!md) return "";
+
+  let html = md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Headers
+  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+  // Blockquotes
+  html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+  // Bold & Italic
+  html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<strong><em>$1</em></strong>');
+  html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
+  html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
+
+  // Horizontal rules
+  html = html.replace(/^---$/gim, '<hr style="border:none; border-top:1px solid rgba(255,255,255,0.1); margin:1.5rem 0;">');
+
+  // Tables
+  const lines = html.split("\n");
+  let inTable = false;
+  let tableHtml = "";
+  let newLines = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith("|") && line.endsWith("|")) {
+      if (!inTable) {
+        inTable = true;
+        tableHtml = "<table>";
+      }
+      const cells = line.split("|").slice(1, -1);
+      if (line.includes("---")) {
+        continue;
+      }
+      const isHeader = !tableHtml.includes("<tbody>") && !tableHtml.includes("<tr>");
+      const tag = isHeader ? "th" : "td";
+      tableHtml += "<tr>" + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join("") + "</tr>";
+    } else {
+      if (inTable) {
+        tableHtml += "</table>";
+        newLines.push(tableHtml);
+        inTable = false;
+      }
+      newLines.push(line);
+    }
+  }
+  if (inTable) {
+    tableHtml += "</table>";
+    newLines.push(tableHtml);
+  }
+
+  html = newLines.join("\n");
+
+  // Lists
+  html = html.replace(/^\- (.*$)/gim, '<li>$1</li>');
+  html = html.replace(/^(\d+)\. (.*$)/gim, '<li><strong>$1.</strong> $2</li>');
+  html = html.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+  html = html.replace(/<\/ul>\s*<ul>/gim, '');
+
+  // Paragraphs
+  html = html.split("\n\n").map(para => {
+    const trimmed = para.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("<h") || trimmed.startsWith("<table") || trimmed.startsWith("<ul") || trimmed.startsWith("<block") || trimmed.startsWith("<hr")) {
+      return trimmed;
+    }
+    return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
+  }).join("\n");
+
+  return html;
+}
+
+function copyReportMarkdown() {
+  if (!currentGeneratedReportMarkdown) {
+    alert("복사할 생성된 보고서가 없습니다.");
+    return;
+  }
+  navigator.clipboard.writeText(currentGeneratedReportMarkdown).then(() => {
+    alert("✅ 보고서 원문 마크다운이 클립보드에 복사되었습니다!");
+  }).catch(err => {
+    alert("클립보드 복사 실패: " + err.message);
+  });
+}
+
+function downloadReportMarkdown() {
+  if (!currentGeneratedReportMarkdown) {
+    alert("다운로드할 생성된 보고서가 없습니다.");
+    return;
+  }
+  const targetTicker = document.getElementById("report-target-ticker")?.value || "REPORT";
+  const dateStr = new Date().toISOString().split("T")[0];
+  const filename = `${targetTicker}_AI_Cross_Analysis_${dateStr}.md`;
+
+  const blob = new Blob([currentGeneratedReportMarkdown], { type: "text/markdown;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+

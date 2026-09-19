@@ -734,6 +734,52 @@ def seed_earning_calls():
         "message": f"{cnt} conference call transcripts seeded successfully"
     })
 
+# ─── AI Report Studio & Agent Endpoints ───
 
+@api_bp.route("/reports/engine-status", methods=["GET"])
+def get_report_engine_status():
+    """Check availability of Gemini API and local Ollama server."""
+    from app.services.report_agent import ReportAgent
+    status = ReportAgent.check_engine_status()
+    return jsonify({"status": "success", "data": status})
 
+@api_bp.route("/reports/templates", methods=["GET"])
+def get_report_templates():
+    """Return pre-configured outline templates."""
+    from app.services.report_agent import REPORT_TEMPLATES
+    return jsonify({"status": "success", "templates": REPORT_TEMPLATES})
 
+@api_bp.route("/reports/generate", methods=["POST"])
+def generate_custom_report():
+    """Generate structured cross-company report using AI ReportAgent."""
+    from app.services.report_agent import ReportAgent
+
+    payload = request.get_json() or {}
+    target_ticker = payload.get("target_ticker", "NVDA")
+    peer_tickers = payload.get("peer_tickers", [])
+    chapters = payload.get("chapters", [])
+    user_notes = payload.get("user_notes", "")
+    timeframe = payload.get("timeframe", "latest")
+    tone_style = payload.get("tone_style", "analyst")
+    engine = payload.get("engine", "gemini")
+    model_name = payload.get("model_name")
+
+    if not chapters:
+        return jsonify({"status": "error", "message": "At least one chapter must be specified."}), 400
+
+    try:
+        agent = ReportAgent(engine=engine, model_name=model_name)
+        result = agent.generate_report(
+            target_ticker=target_ticker,
+            peer_tickers=peer_tickers,
+            chapters=chapters,
+            user_notes=user_notes,
+            timeframe=timeframe,
+            tone_style=tone_style
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500

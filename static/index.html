@@ -41,6 +41,9 @@
       <button class="nav-tab-btn" id="btn-tab-transcripts" onclick="switchTab('tab-transcripts')">
         <span>📞</span> 어닝콜
       </button>
+      <button class="nav-tab-btn" id="btn-tab-reports" onclick="switchTab('tab-reports')">
+        <span>📝</span> AI 리포트
+      </button>
       <button class="nav-tab-btn" id="btn-tab-indicators" onclick="switchTab('tab-indicators')">
         <span>🌐</span> 선행지표
       </button>
@@ -588,6 +591,170 @@
           <!-- Reader Content Box -->
           <div class="transcript-reader-box" id="transcript-reader-body">
             <div style="text-align: center; color: var(--text-muted); padding: 4rem;">좌측 목록에서 어닝콜을 선택하세요.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. AI REPORT STUDIO TAB -->
+    <section id="tab-reports" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>📝</span> AI 맞춤형 교차 리포트 스튜디오 (AI Report Studio)</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">
+            사용자의 가설/메모를 바탕으로 6개년 분기 재무제표와 타사 어닝콜을 스스로 조회(Tool Calling)하여 교차 종합 분석 리포트를 생성합니다.
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center;">
+          <div class="engine-badge-pill" id="report-engine-status-badge" style="font-size: 0.78rem; padding: 0.3rem 0.7rem; border-radius: 9999px; background: rgba(16, 185, 129, 0.12); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.3); display: flex; align-items: center; gap: 0.4rem;">
+            <span class="status-dot"></span>
+            <span>Gemini 2.5 Flash 준비 완료</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2-Column Split Workspace -->
+      <div class="transcripts-layout" style="min-height: 720px;">
+        <!-- Left: Configuration & Studio Controls -->
+        <div class="transcript-sidebar" style="width: 440px; gap: 1rem; overflow-y: auto; max-height: calc(100vh - 240px); padding-right: 6px;">
+          
+          <!-- Box 1: Engine & Model Choice -->
+          <div class="glass-panel" style="padding: 1rem;">
+            <label style="font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+              <span>⚙️</span> AI 추론 엔진 선택
+            </label>
+            <div style="display: flex; gap: 0.5rem;">
+              <select id="report-engine-select" class="btn" style="width: 100%; font-weight: 600; color: var(--accent-cyan); background: var(--bg-card);" onchange="handleEngineChange(this.value)">
+                <option value="gemini" selected>⚡ Google Gemini 2.5 Flash (클라우드 무료 / 100만 컨텍스트)</option>
+                <option value="ollama">💻 로컬 Qwen 2.5 (Ollama - 내 맥북 로컬 / 100% 보안)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Box 2: Target & Peer Companies -->
+          <div class="glass-panel" style="padding: 1rem;">
+            <div style="margin-bottom: 0.8rem;">
+              <label style="font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 0.4rem; display: block;">
+                🎯 메인 분석 대상 기업
+              </label>
+              <select id="report-target-ticker" class="btn" style="width: 100%; font-weight: 600; color: var(--accent-cyan); background: var(--bg-card);">
+                <option value="005930.KS" selected>005930.KS — 삼성전자 (Samsung Electronics)</option>
+                <option value="000660.KS">000660.KS — SK하이닉스 (SK Hynix)</option>
+                <option value="NVDA">NVDA — 엔비디아 (NVIDIA)</option>
+                <option value="TSM">TSM — TSMC</option>
+                <option value="MSFT">MSFT — 마이크로소프트 (Microsoft)</option>
+                <option value="GOOGL">GOOGL — 구글 (Alphabet)</option>
+                <option value="AMZN">AMZN — 아마존 (Amazon)</option>
+                <option value="META">META — 메타 (Meta)</option>
+                <option value="AMD">AMD — AMD</option>
+                <option value="AVGO">AVGO — 브로드컴 (Broadcom)</option>
+                <option value="MU">MU — 마이크론 (Micron)</option>
+                <option value="ASML">ASML — ASML</option>
+                <option value="AAPL">AAPL — 애플 (Apple)</option>
+                <option value="VRT">VRT — 버티브 (Vertiv)</option>
+                <option value="ORCL">ORCL — 오라클 (Oracle)</option>
+              </select>
+            </div>
+
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 0.4rem; display: flex; justify-content: space-between; align-items: center;">
+                <span>🔗 함께 교차 대조할 기업 (피어 그룹)</span>
+                <span style="font-size: 0.72rem; color: var(--text-muted);">다중 선택</span>
+              </label>
+              <div id="report-peer-chips-container" style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem;">
+                <!-- Peer Chips dynamically loaded or default populated -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Box 3: Outline & Chapters -->
+          <div class="glass-panel" style="padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+              <label style="font-size: 0.8rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.4rem;">
+                <span>📋</span> 보고서 템플릿 & 목차 구성
+              </label>
+              <select id="report-template-select" class="btn" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" onchange="handleTemplateSelectChange(this.value)">
+                <option value="cross_chain" selected>밸류체인 교차 비교형</option>
+                <option value="beat_miss">Beat/Miss 어닝 서프라이즈형</option>
+                <option value="executive_brief">1페이지 Executive Brief형</option>
+              </select>
+            </div>
+
+            <div id="report-chapters-container" style="display: flex; flex-direction: column; gap: 0.45rem; background: rgba(0,0,0,0.25); padding: 0.7rem; border-radius: var(--radius-sm); max-height: 200px; overflow-y: auto;">
+              <!-- Chapter Checkbox List -->
+            </div>
+          </div>
+
+          <!-- Box 4: Tone & Style -->
+          <div class="glass-panel" style="padding: 1rem;">
+            <div style="display: flex; gap: 0.6rem;">
+              <div style="flex: 1;">
+                <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">보고서 문체/어조</label>
+                <select id="report-tone-select" class="btn" style="width: 100%; font-size: 0.8rem;">
+                  <option value="analyst" selected>기관 리서치 애널리스트풍</option>
+                  <option value="newsletter">테크 투자 뉴스레터/칼럼풍</option>
+                  <option value="executive">C-Level 압축 요약 메모풍</option>
+                </select>
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">분석 시계열 범위</label>
+                <select id="report-timeframe-select" class="btn" style="width: 100%; font-size: 0.8rem;">
+                  <option value="latest" selected>최근 1개 분기 집중</option>
+                  <option value="year">최근 4개 분기 (1개년)</option>
+                  <option value="longterm">2020~2026 장기 시계열</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Box 5: User Custom Memo -->
+          <div class="glass-panel" style="padding: 1rem;">
+            <label style="font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 0.4rem; display: block;">
+              ✍️ 내 수동 메모 및 검증 가설 (선택 사항)
+            </label>
+            <textarea id="report-user-notes" class="search-input" style="width: 100%; height: 95px; font-size: 0.82rem; line-height: 1.5; border-radius: var(--radius-sm); padding: 0.6rem; resize: vertical;" placeholder="예: 이번 분기 삼성전자의 HBM3E 공급 지연 이슈를 중심으로, SK하이닉스 독점 상황과 엔비디아의 코멘트를 대조 분석해 줘."></textarea>
+          </div>
+
+          <!-- Action Button -->
+          <button class="btn btn-primary" id="btn-generate-report" style="width: 100%; justify-content: center; font-size: 0.95rem; font-weight: 700; padding: 0.75rem;" onclick="submitGenerateReport()">
+            🚀 맞춤형 교차 보고서 생성
+          </button>
+        </div>
+
+        <!-- Right: Report Viewer & Activity Tracker -->
+        <div class="transcript-main-pane" style="height: 100%;">
+          <!-- Action Top Header -->
+          <div class="glass-panel" style="padding: 0.85rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+              <span id="report-viewer-badge" class="filing-badge" style="font-size: 0.88rem; padding: 0.25rem 0.6rem; background: rgba(99,102,241,0.2); color: #A5B4FC; border: 1px solid rgba(99,102,241,0.4);">005930.KS</span>
+              <h3 id="report-viewer-title" style="font-size: 1.05rem; color: #fff; margin: 0;">AI 리포트 스튜디오</h3>
+              <span id="report-viewer-engine-pill" class="status-pill" style="font-size: 0.75rem;">Gemini 2.5 Flash</span>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="copyReportMarkdown()">📋 마크다운 복사</button>
+              <button class="btn" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="downloadReportMarkdown()">💾 .md 다운로드</button>
+            </div>
+          </div>
+
+          <!-- Realtime Tool Execution Activity Log Bar -->
+          <div id="report-activity-container" class="glass-panel" style="display: none; padding: 0.7rem 1.2rem; background: rgba(15, 23, 42, 0.75); border-left: 4px solid var(--accent-cyan);">
+            <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+              <span class="status-dot"></span>
+              <span>에이전트 실시간 도구 실행 로그 (Tool Activity Tracker)</span>
+            </div>
+            <div id="report-activity-pills" style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+              <!-- Pills inserted dynamically -->
+            </div>
+          </div>
+
+          <!-- Report Rendered Content Box -->
+          <div class="transcript-reader-box" id="report-content-body" style="font-size: 0.95rem; line-height: 1.85; max-height: calc(100vh - 270px);">
+            <div style="text-align: center; color: var(--text-muted); padding: 5rem 1rem;">
+              <span style="font-size: 2.5rem; display: block; margin-bottom: 0.8rem;">📝</span>
+              좌측에서 대상 기업과 목차를 설정하고 <strong>[🚀 맞춤형 교차 보고서 생성]</strong> 버튼을 누르면<br>
+              AI 에이전트가 팩트 데이터베이스를 직접 조회하여 맞춤형 보고서를 작성합니다.
+            </div>
           </div>
         </div>
       </div>

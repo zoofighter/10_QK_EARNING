@@ -897,4 +897,131 @@ tr:hover td {
   gap: 0.5rem;
 }
 
+/* ========================================================
+   AI Report Studio Styles
+   ======================================================== */
+.peer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.peer-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.peer-chip.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--accent-primary);
+  color: #A5B4FC;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+}
+
+.chapter-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.chapter-checkbox-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.report-activity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  background: rgba(6, 182, 212, 0.12);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  animation: fadeIn 0.3s ease;
+}
+
+/* Report Content Typography & Table Rendering */
+#report-content-body h1 {
+  font-size: 1.45rem;
+  color: #fff;
+  margin: 1.2rem 0 0.8rem 0;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#report-content-body h2 {
+  font-size: 1.2rem;
+  color: var(--accent-cyan);
+  margin: 1.5rem 0 0.6rem 0;
+}
+
+#report-content-body h3 {
+  font-size: 1.05rem;
+  color: #A5B4FC;
+  margin: 1.2rem 0 0.5rem 0;
+}
+
+#report-content-body p {
+  margin-bottom: 0.9rem;
+  line-height: 1.8;
+}
+
+#report-content-body ul, #report-content-body ol {
+  margin: 0.6rem 0 1rem 1.4rem;
+  line-height: 1.75;
+}
+
+#report-content-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2rem 0;
+  font-size: 0.86rem;
+  background: rgba(16, 24, 40, 0.6);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+#report-content-body th, #report-content-body td {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+
+#report-content-body th {
+  background: rgba(23, 32, 54, 0.9);
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+#report-content-body blockquote {
+  border-left: 3px solid var(--accent-primary);
+  background: rgba(99, 102, 241, 0.08);
+  padding: 0.6rem 1rem;
+  margin: 1rem 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-style: italic;
+  color: #E2E8F0;
+}
+
+
 
