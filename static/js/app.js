@@ -58,6 +58,7 @@ function switchTab(tabId) {
     loadMemorySpotData();
     loadKrExportData();
     loadKrExportCombinedChart();
+    loadGpuRentalData();
   }
 }
 
@@ -2403,10 +2404,10 @@ function renderChapterCheckboxes(templateKey = "cross_chain") {
   const tpl = reportTemplates[templateKey] || {
     chapters: [
       "1. Executive Summary (핵심 결론 및 시사점 3줄 요약)",
-      "2. 대상 기업 최근 실적 분석 (매출, 영업이익률, CapEx 확정치 테이블)",
+      "2. 대상 기업 최근 실적 분석 (매출액, 영업이익, 영업이익률, CapEx 확정치 테이블)",
       "3. 밸류체인 전·후방 기업과의 교차 대조 (경쟁사 점유율 및 고객사 수요)",
       "4. 어닝콜 경영진 발언 및 시장 핵심 의구심(Q&A) 검증",
-      "5. 산업 선행지표(TSMC 월매출, 메모리 현물가, 수출통계) 연계 시그널",
+      "5. 산업 선행지표(TSMC 월매출, 메모리 현물가, 수출통계, GPU 렌탈가) 연계 시그널",
       "6. 향후 실적 전망 및 리스크 요인"
     ]
   };
@@ -2421,9 +2422,17 @@ function renderChapterCheckboxes(templateKey = "cross_chain") {
 
 function handleEngineChange(engineVal) {
   const pill = document.getElementById("report-viewer-engine-pill");
-  if (pill) {
-    pill.textContent = engineVal === "gemini" ? "Gemini 2.5 Flash" : "Local Qwen 2.5 (Ollama)";
-  }
+  if (!pill) return;
+  const labels = {
+    "gemini:gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini:gemini-3.8-flash": "Gemini 3.8 Flash",
+    "opencode:opencode/muse-spark-1.3-contributor-free": "Muse Spark 1.3",
+    "opencode:opencode/muse-spark-1.2-contributor-free": "Muse Spark 1.2",
+    "opencode:opencode/nemotron-3.5-lightning-free": "Nemotron 3.5",
+    "opencode:opencode/ling-3.0-flash-fin-free": "Ling 3.0 Financial",
+    "ollama:qwen2.5:7b": "Qwen 2.5 (Ollama)"
+  };
+  pill.textContent = labels[engineVal] || engineVal;
 }
 
 async function submitGenerateReport() {
@@ -2441,7 +2450,17 @@ async function submitGenerateReport() {
   const toneStyle = document.getElementById("report-tone-select")?.value || "analyst";
   const timeframe = document.getElementById("report-timeframe-select")?.value || "latest";
   const userNotes = document.getElementById("report-user-notes")?.value || "";
-  const engine = document.getElementById("report-engine-select")?.value || "gemini";
+  
+  const engineRaw = document.getElementById("report-engine-select")?.value || "gemini:gemini-2.5-flash";
+  let engine = "gemini";
+  let modelName = "gemini-2.5-flash";
+  if (engineRaw.includes(":")) {
+    const parts = engineRaw.split(":");
+    engine = parts[0];
+    modelName = parts.slice(1).join(":");
+  } else {
+    engine = engineRaw;
+  }
 
   const btn = document.getElementById("btn-generate-report");
   const activityContainer = document.getElementById("report-activity-container");
@@ -2483,7 +2502,8 @@ async function submitGenerateReport() {
         user_notes: userNotes,
         timeframe: timeframe,
         tone_style: toneStyle,
-        engine: engine
+        engine: engine,
+        model_name: modelName
       })
     });
 
@@ -2640,4 +2660,250 @@ function downloadReportMarkdown() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ─── 13. GPU Cloud Rental Spot Prices (H100/H200/B200/A100) ───
+let gpuRentalChart = null;
+let currentGpuModel = "H100";
+let cachedGpuProviders = [];
+
+async function loadGpuRentalData() {
+  try {
+    const res = await fetch("/api/gpu/prices");
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    const kpis = json.kpis || {};
+    cachedGpuProviders = json.providers || [];
+
+    // Update KPI Cards
+    updateGpuCard("h100", kpis.H100);
+    updateGpuCard("h200", kpis.H200);
+    updateGpuCard("b200", kpis.B200);
+    updateGpuCard("a100", kpis.A100);
+
+    // Render Table
+    renderGpuProviderTable(cachedGpuProviders, currentGpuModel);
+
+    // Render Chart
+    await renderGpuRentalChart(currentGpuModel);
+  } catch (err) {
+    console.error("Error loading GPU rental data:", err);
+  }
+}
+
+function updateGpuCard(prefix, kpi) {
+  if (!kpi) return;
+  const valEl = document.getElementById(`val-gpu-${prefix}`);
+  const subEl = document.getElementById(`sub-gpu-${prefix}`);
+  if (valEl) {
+    valEl.innerHTML = `$${kpi.current_price.toFixed(2)}<span style="font-size: 0.75rem; font-weight: normal; color: var(--text-muted);">/hr</span>`;
+  }
+  if (subEl) {
+    const sign = kpi.pct_30d > 0 ? "▲ +" : (kpi.pct_30d < 0 ? "▼ " : "");
+    const color = kpi.pct_30d > 0 ? "var(--accent-emerald)" : (kpi.pct_30d < 0 ? "var(--accent-cyan)" : "var(--text-muted)");
+    subEl.style.color = color;
+    subEl.textContent = `30일 변동: ${sign}${kpi.pct_30d}%`;
+  }
+}
+
+function renderGpuProviderTable(providers, filterModel = "H100") {
+  const tbody = document.getElementById("gpu-providers-tbody");
+  if (!tbody) return;
+
+  const filtered = (filterModel === "ALL")
+    ? providers
+    : providers.filter(p => p.model_key === filterModel);
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">해당 모델에 대한 호가 데이터가 없습니다.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(p => {
+    const availTag = p.availability === "HIGH"
+      ? `<span class="layer-tag L2" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald);">즉시 대여가능</span>`
+      : (p.availability === "MEDIUM"
+        ? `<span class="layer-tag L4" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-amber);">제한적 가용</span>`
+        : `<span class="layer-tag L5" style="background: rgba(99, 102, 241, 0.2); color: var(--accent-indigo);">예약/할당제</span>`);
+
+    return `
+      <tr>
+        <td style="font-weight: 700; color: #fff;">${p.provider}</td>
+        <td><span class="layer-tag L3">${p.gpu_model}</span></td>
+        <td style="font-weight: 700; color: var(--accent-cyan);">$${p.spot_price.toFixed(2)}/hr</td>
+        <td style="color: var(--text-secondary);">$${p.ondemand_price.toFixed(2)}/hr</td>
+        <td style="font-size: 0.78rem; color: var(--text-muted);">${p.interconnect}</td>
+        <td>${availTag}</td>
+        <td style="font-size: 0.78rem; color: var(--text-muted);">${p.region}</td>
+        <td style="font-size: 0.75rem; color: var(--text-muted);">${p.updated_at}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function filterProviderTable(filterVal) {
+  renderGpuProviderTable(cachedGpuProviders, filterVal);
+}
+
+async function switchGpuModel(modelKey) {
+  currentGpuModel = modelKey.toUpperCase();
+
+  // Highlight pill
+  document.querySelectorAll("#gpu-model-selector .layer-pill").forEach(p => p.classList.remove("active"));
+  const activePill = document.getElementById(`pill-gpu-${currentGpuModel.toLowerCase()}`);
+  if (activePill) activePill.classList.add("active");
+
+  // Highlight KPI card
+  document.querySelectorAll("#gpu-kpi-grid .kpi-card").forEach(c => {
+    c.classList.remove("active");
+    c.style.borderColor = "var(--border-glass)";
+  });
+  const activeCard = document.getElementById(`card-gpu-${currentGpuModel.toLowerCase()}`);
+  if (activeCard) {
+    activeCard.classList.add("active");
+    activeCard.style.borderColor = "var(--accent-cyan)";
+  }
+
+  // Update title
+  const titleEl = document.getElementById("gpu-chart-title");
+  const modelNames = {
+    H100: "NVIDIA H100 (SXM5 80GB)",
+    H200: "NVIDIA H200 (141GB HBM3e)",
+    B200: "NVIDIA B200 (Blackwell NVL)",
+    A100: "NVIDIA A100 (SXM4 80GB)"
+  };
+  if (titleEl) {
+    titleEl.innerHTML = `<span>📈</span> ${modelNames[currentGpuModel] || currentGpuModel} 시간당 렌탈 스팟 가격 추이 (USD/hr)`;
+  }
+
+  // Update table filter dropdown
+  const filterSelect = document.getElementById("gpu-provider-filter");
+  if (filterSelect) {
+    filterSelect.value = currentGpuModel;
+  }
+  renderGpuProviderTable(cachedGpuProviders, currentGpuModel);
+
+  // Reload Chart
+  await renderGpuRentalChart(currentGpuModel);
+}
+
+async function renderGpuRentalChart(modelKey = "H100") {
+  const canvas = document.getElementById("gpu-rental-chart");
+  if (!canvas) return;
+
+  try {
+    const res = await fetch(`/api/gpu/history?model=${modelKey}&limit=50`);
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    const history = json.history || [];
+    const labels = history.map(h => h.date);
+    const prices = history.map(h => h.value);
+    const notes = history.map(h => h.note || "");
+
+    const colors = {
+      H100: { line: "#06b6d4", fill: "rgba(6, 182, 212, 0.12)" },
+      H200: { line: "#10b981", fill: "rgba(16, 185, 129, 0.12)" },
+      B200: { line: "#f59e0b", fill: "rgba(245, 158, 11, 0.12)" },
+      A100: { line: "#6366f1", fill: "rgba(99, 102, 241, 0.12)" }
+    };
+    const c = colors[modelKey] || colors.H100;
+
+    if (gpuRentalChart) {
+      gpuRentalChart.destroy();
+    }
+
+    const ctx = canvas.getContext("2d");
+    gpuRentalChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: `${json.name_ko} Spot ($/hr)`,
+          data: prices,
+          borderColor: c.line,
+          backgroundColor: c.fill,
+          borderWidth: 2.5,
+          tension: 0.25,
+          fill: true,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: c.line
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: "index",
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            backgroundColor: "rgba(15, 23, 42, 0.95)",
+            titleColor: "#38bdf8",
+            bodyColor: "#f1f5f9",
+            borderColor: "rgba(255, 255, 255, 0.1)",
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              label: function(context) {
+                return ` Spot 단가: $${context.parsed.y.toFixed(2)} / hr`;
+              },
+              afterLabel: function(context) {
+                const note = notes[context.dataIndex];
+                return note ? ` 📌 ${note}` : "";
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: {
+              color: "rgba(255, 255, 255, 0.04)"
+            },
+            ticks: {
+              color: "#94a3b8",
+              font: { size: 11 },
+              maxRotation: 45
+            }
+          },
+          y: {
+            grid: {
+              color: "rgba(255, 255, 255, 0.04)"
+            },
+            ticks: {
+              color: "#94a3b8",
+              font: { size: 11 },
+              callback: function(value) {
+                return "$" + value.toFixed(2);
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Error rendering GPU rental chart:", err);
+  }
+}
+
+async function seedGpuRentalData() {
+  try {
+    const res = await fetch("/api/gpu/seed", { method: "POST" });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`✅ GPU 클라우드 렌탈 스팟 시계열 데이터(${json.seeded_count}건)가 데이터베이스에 적재되었습니다!`);
+      loadGpuRentalData();
+    } else {
+      alert(`실패: ${json.message}`);
+    }
+  } catch (err) {
+    alert(`오류: ${err.message}`);
+  }
+}
+
 

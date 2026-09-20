@@ -8,6 +8,8 @@ import os
 import json
 import urllib.request
 import urllib.error
+import subprocess
+import shutil
 from typing import Dict, Any, List, Optional
 from app.models.database import query_db
 
@@ -16,10 +18,10 @@ REPORT_TEMPLATES = {
         "title": "밸류체인 교차 비교 심층 리포트 (추천)",
         "chapters": [
             "1. Executive Summary (핵심 결론 및 시사점 3줄 요약)",
-            "2. 대상 기업 최근 실적 분석 (매출, 영업이익률, CapEx 확정치 테이블)",
+            "2. 대상 기업 최근 실적 분석 (매출액, 영업이익, 영업이익률, CapEx 확정치 테이블)",
             "3. 밸류체인 전·후방 기업과의 교차 대조 (경쟁사 점유율 및 고객사 수요)",
             "4. 어닝콜 경영진 발언 및 시장 핵심 의구심(Q&A) 검증",
-            "5. 산업 선행지표(TSMC 월매출, 메모리 현물가, 수출통계) 연계 시그널",
+            "5. 산업 선행지표(TSMC 월매출, 메모리 현물가, 수출통계, GPU 렌탈가) 연계 시그널",
             "6. 향후 실적 전망 및 리스크 요인"
         ]
     },
@@ -49,12 +51,17 @@ class ReportAgent:
     """Agentic RAG Engine for cross-company financial and transcript synthesis."""
 
     def __init__(self, engine: str = "gemini", model_name: Optional[str] = None):
-        self.engine = engine.lower()  # 'gemini' | 'ollama'
+        self.engine = engine.lower()  # 'gemini' | 'ollama' | 'opencode'
         self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
         self.ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
         if not model_name:
-            self.model_name = "gemini-2.5-flash" if self.engine == "gemini" else "qwen2.5:7b"
+            if self.engine == "gemini":
+                self.model_name = "gemini-2.5-flash"
+            elif self.engine == "opencode":
+                self.model_name = "opencode/muse-spark-1.3-contributor-free"
+            else:
+                self.model_name = "qwen2.5:7b"
         else:
             self.model_name = model_name
 
@@ -82,7 +89,9 @@ class ReportAgent:
                 "filing_type": s.get("filing_type", "10-Q"),
                 "revenue_usd_m": s.get("revenue"),
                 "revenue_yoy_pct": s.get("revenue_yoy_pct"),
+                "operating_income_usd_m": s.get("operating_income"),
                 "op_income_usd_m": s.get("operating_income"),
+                "operating_margin_pct": s.get("op_margin_pct"),
                 "op_margin_pct": s.get("op_margin_pct"),
                 "net_income_usd_m": s.get("net_income"),
                 "capex_usd_m": s.get("capex"),
@@ -188,8 +197,32 @@ class ReportAgent:
         }
 
     @staticmethod
+    def tool_get_gpu_rental_prices(gpu_model: str = "H100") -> Dict[str, Any]:
+        """Fetch real-time and historical GPU cloud rental spot prices ($/hr)."""
+        from app.services.gpu_price_collector import GpuPriceCollector
+        collector = GpuPriceCollector()
+        clean_model = gpu_model.upper().strip() if gpu_model else "H100"
+        
+        summary = collector.get_latest_summary()
+        history = collector.get_price_history(clean_model, limit=12)
+        
+        kpi = summary["kpis"].get(clean_model, summary["kpis"].get("H100"))
+        
+        # Filter matching providers
+        providers = [p for p in summary["providers"] if p["model_key"] == clean_model]
+        if not providers:
+            providers = summary["providers"][:4]
+
+        return {
+            "requested_model": clean_model,
+            "current_benchmark": kpi,
+            "recent_trend": history.get("history", []),
+            "providers_quotations": providers
+        }
+
+    @staticmethod
     def tool_get_lead_indicators() -> Dict[str, Any]:
-        """Fetch leading indicators: memory spot prices and customs export statistics."""
+        """Fetch leading indicators: memory spot prices, customs export statistics, and GPU rental prices."""
         mem_rows = query_db(
             """
             SELECT indicator_type, date, value, unit, note
@@ -208,10 +241,20 @@ class ReportAgent:
             LIMIT 6
             """
         )
+        gpu_rows = query_db(
+            """
+            SELECT indicator_type, date, value, unit, note
+            FROM industry_indicator
+            WHERE indicator_type LIKE 'GPU_RENTAL_%'
+            ORDER BY date DESC
+            LIMIT 6
+            """
+        )
 
         return {
             "memory_spot_latest": [dict(r) for r in mem_rows],
-            "kr_semiconductor_export_latest": [dict(r) for r in exp_rows]
+            "kr_semiconductor_export_latest": [dict(r) for r in exp_rows],
+            "gpu_rental_latest": [dict(r) for r in gpu_rows]
         }
 
     # =========================================================================
@@ -223,7 +266,7 @@ class ReportAgent:
         return [
             {
                 "name": "get_quarterly_financials",
-                "description": "기업의 최근 분기별 매출, 영업이익률(OPM), 순이익, 설비투자(CapEx), 데이터센터 비중, YoY 성장률을 조회합니다.",
+                "description": "기업의 최근 분기별 매출액, 영업이익(Operating Income 절대액), 영업이익률(OPM %), 순이익, 설비투자(CapEx), 데이터센터 비중, YoY 성장률을 조회합니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -258,10 +301,20 @@ class ReportAgent:
             },
             {
                 "name": "get_lead_indicators",
-                "description": "글로벌 DRAM/NAND 메모리 현물 가격 추이 및 한국 관세청 10일 단위 반도체 수출 잠정치를 조회합니다.",
+                "description": "글로벌 DRAM/NAND 메모리 현물 가격 추이, 한국 관세청 10일 단위 반도체 수출 잠정치, 및 최신 GPU 렌탈 스팟 가격을 조회합니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {}
+                }
+            },
+            {
+                "name": "get_gpu_rental_prices",
+                "description": "NVIDIA H100, H200, B200, A100 등 주요 AI 가속기의 클라우드 렌탈 스팟 시세($/hr), 30일 가격 추이, 및 공급사(Lambda, RunPod, CoreWeave 등)별 단가를 조회합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "gpu_model": {"type": "string", "description": "GPU 모델명 ('H100', 'H200', 'B200', 'A100' 중 선택, 기본 'H100')"}
+                    }
                 }
             }
         ]
@@ -281,6 +334,9 @@ class ReportAgent:
             return self.tool_get_consensus_surprise(ticker)
         elif name == "get_lead_indicators":
             return self.tool_get_lead_indicators()
+        elif name == "get_gpu_rental_prices":
+            gpu_model = args.get("gpu_model", "H100")
+            return self.tool_get_gpu_rental_prices(gpu_model)
         else:
             return {"error": f"Unknown tool: {name}"}
 
@@ -320,8 +376,12 @@ class ReportAgent:
 2. 메인 분석 대상 기업: {target_ticker}
 3. 교차 비교 대상 기업군: {', '.join(peer_tickers) if peer_tickers else '자체 심층 분석'}
 4. 문체: {tone_instruction}
-5. 정확성: 재무 수치(매출, 영업이익률, CapEx, 데이터센터 비중)는 반드시 도구(Tool)를 통해 가져온 실제 팩트 데이터를 인용해야 하며, 추측으로 임의의 숫자를 지어내지 마십시오.
-6. 출처/인용: 어닝콜 발언이나 Q&A를 인용할 때는 발언자(경영진 또는 애널리스트)와 분기를 명시하십시오.
+5. [필수] 최근 실적 분석 테이블 구성:
+   - 대상 기업 실적 분석 챕터에서는 반드시 마크다운 테이블을 작성하십시오.
+   - 테이블 컬럼에는 [분기 (Period), 매출액 (Revenue), 매출 YoY(%), 영업이익 (Operating Income), 영업이익률 (OPM %), 설비투자 (CapEx), 데이터센터 비중(%)]을 빠짐없이 포함해야 합니다.
+   - 특히 매출액뿐만 아니라 '영업이익' 절대 금액($M 또는 조원/억원)과 '영업이익률(%)'을 반드시 둘 다 명시하십시오.
+6. 정확성: 재무 수치는 반드시 도구(Tool)를 통해 가져온 실제 팩트 데이터를 인용해야 하며, 추측으로 임의의 숫자를 지어내지 마십시오.
+7. 출처/인용: 어닝콜 발언이나 Q&A를 인용할 때는 발언자(경영진 또는 애널리스트)와 분기를 명시하십시오.
 """
 
         # Build User Prompt
@@ -341,6 +401,10 @@ class ReportAgent:
 
         if self.engine == "gemini":
             report_markdown, tools_used_log = self._run_gemini_agent(system_prompt, user_prompt, tools_used_log)
+        elif self.engine == "opencode":
+            report_markdown, tools_used_log = self._run_opencode_agent(
+                system_prompt, user_prompt, tools_used_log, target_ticker, peer_tickers
+            )
         else:
             report_markdown, tools_used_log = self._run_ollama_agent(system_prompt, user_prompt, tools_used_log)
 
@@ -355,7 +419,7 @@ class ReportAgent:
         }
 
     # =========================================================================
-    # 4. Engine Implementation: Gemini 2.5 REST API
+    # 4. Engine Implementation: Gemini REST API (2.5 Flash / 3.8 Flash)
     # =========================================================================
 
     def _run_gemini_agent(
@@ -367,8 +431,9 @@ class ReportAgent:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY environment variable is not configured.")
 
-        # Candidate models for fallback
-        candidate_models = [self.model_name, "gemini-2.5-flash-lite", "gemini-flash-latest"]
+        # Candidate models for fallback (supporting gemini-3.8-flash and 2.5-flash)
+        fallback_chain = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
+        candidate_models = [self.model_name] + [m for m in fallback_chain if m != self.model_name]
         active_model = self.model_name
 
         gemini_tools = [
@@ -554,12 +619,133 @@ class ReportAgent:
         return "로컬 모델 도구 호출 루프가 완료되었습니다.", tools_log
 
     # =========================================================================
-    # 6. Status Checker
+    # 6. Engine Implementation: OpenCode (Muse Spark 1.3 / Nemotron / Ling)
+    # =========================================================================
+
+    def _run_opencode_agent(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        tools_log: List[Dict[str, Any]],
+        target_ticker: str,
+        peer_tickers: List[str]
+    ) -> (str, List[Dict[str, Any]]):
+        """
+        Execute OpenCode model (e.g. Muse Spark 1.3 / Nemotron) with pre-fetched database context.
+        """
+        # 1. Pre-fetch target financial data
+        target_fin = self.tool_get_quarterly_financials(target_ticker, limit=4)
+        tools_log.append({
+            "tool": "get_quarterly_financials",
+            "args": {"ticker": target_ticker, "limit": 4},
+            "summary": f"get_quarterly_financials(ticker={target_ticker}, limit=4)"
+        })
+
+        # 2. Pre-fetch peer financial data
+        peer_data = {}
+        for p in peer_tickers:
+            p_clean = p.strip()
+            if p_clean:
+                p_fin = self.tool_get_quarterly_financials(p_clean, limit=4)
+                peer_data[p_clean] = p_fin
+                tools_log.append({
+                    "tool": "get_quarterly_financials",
+                    "args": {"ticker": p_clean, "limit": 4},
+                    "summary": f"get_quarterly_financials(ticker={p_clean}, limit=4)"
+                })
+
+        # 3. Pre-fetch transcripts
+        trans_res = self.tool_search_transcripts(target_ticker, query="HBM Blackwell CapEx guidance margin")
+        tools_log.append({
+            "tool": "search_earning_call_transcripts",
+            "args": {"ticker": target_ticker, "query": "core topics"},
+            "summary": f"search_earning_call_transcripts(ticker={target_ticker}, query='core topics')"
+        })
+
+        # 4. Pre-fetch consensus
+        cons_res = self.tool_get_consensus_surprise(target_ticker)
+        tools_log.append({
+            "tool": "get_consensus_surprise",
+            "args": {"ticker": target_ticker},
+            "summary": f"get_consensus_surprise(ticker={target_ticker})"
+        })
+
+        # 5. Pre-fetch lead indicators & GPU rental
+        lead_res = self.tool_get_lead_indicators()
+        tools_log.append({
+            "tool": "get_lead_indicators",
+            "args": {},
+            "summary": "get_lead_indicators()"
+        })
+        gpu_res = self.tool_get_gpu_rental_prices("H100")
+        tools_log.append({
+            "tool": "get_gpu_rental_prices",
+            "args": {"gpu_model": "H100"},
+            "summary": "get_gpu_rental_prices(gpu_model='H100')"
+        })
+
+        # 6. Synthesize rich prompt
+        context_block = f"""
+[시스템 데이터베이스 실측 팩트 데이터 (반드시 아래 수치만 인용하십시오)]
+1. 분석 대상 기업({target_ticker}) 최근 4개 분기 실적 확정치:
+{json.dumps(target_fin.get('series', []), ensure_ascii=False, indent=2)}
+
+2. 피어 비교 기업군 실적 확정치:
+{json.dumps(peer_data, ensure_ascii=False, indent=2)}
+
+3. 대상 기업 어닝콜 전문 발췌 (경영진 발언 & 애널리스트 질의응답):
+{json.dumps(trans_res.get('results', []), ensure_ascii=False, indent=2)}
+
+4. 어닝 서프라이즈(Beat/Miss) 및 실적 발표 후 주가 반응:
+{json.dumps(cons_res.get('records', []), ensure_ascii=False, indent=2)}
+
+5. 산업 선행 지표 (메모리 현물가 & 관세청 반도체 수출통계 & GPU 렌탈가):
+- 메모리 현물가: {json.dumps(lead_res.get('memory_spot_latest', []), ensure_ascii=False)}
+- 관세청 반도체 수출: {json.dumps(lead_res.get('kr_semiconductor_export_latest', []), ensure_ascii=False)}
+- H100 GPU 렌탈 스팟가: {json.dumps(gpu_res.get('current_benchmark', {}), ensure_ascii=False)}
+"""
+
+        augmented_prompt = f"""{system_prompt}
+
+{context_block}
+
+{user_prompt}
+"""
+
+        try:
+            cmd = ["opencode", "run", "-m", self.model_name, "--format", "json", augmented_prompt]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+            output_parts = []
+            for line in proc.stdout.splitlines():
+                if line.strip():
+                    try:
+                        evt = json.loads(line)
+                        if evt.get("type") == "text":
+                            txt = evt.get("part", {}).get("text", "")
+                            if txt:
+                                output_parts.append(txt)
+                    except Exception:
+                        pass
+
+            report_text = "".join(output_parts).strip()
+            if not report_text:
+                report_text = proc.stdout.strip()
+
+            if not report_text:
+                report_text = f"## OpenCode ({self.model_name}) 실행 결과\n\n모델 실행 중 출력이 비어 있습니다. (stderr: {proc.stderr[:300]})"
+
+            return report_text, tools_log
+        except Exception as e:
+            return f"OpenCode 실행 오류 ({self.model_name}): {str(e)}", tools_log
+
+    # =========================================================================
+    # 7. Status Checker
     # =========================================================================
 
     @staticmethod
     def check_engine_status() -> Dict[str, Any]:
-        """Check availability of Gemini API and local Ollama server."""
+        """Check availability of Gemini API, local Ollama, and OpenCode server."""
         gemini_key = os.environ.get("GEMINI_API_KEY", "")
         gemini_ok = bool(gemini_key and gemini_key.startswith("AIzaSy"))
 
@@ -575,11 +761,27 @@ class ReportAgent:
         except Exception:
             ollama_ok = False
 
+        # Test OpenCode CLI
+        opencode_ok = bool(shutil.which("opencode"))
+        opencode_models = [
+            "opencode/muse-spark-1.3-contributor-free",
+            "opencode/muse-spark-1.2-contributor-free",
+            "opencode/nemotron-3.5-lightning-free",
+            "opencode/ling-3.0-flash-fin-free"
+        ] if opencode_ok else []
+
         return {
             "gemini": {
                 "available": gemini_ok,
+                "models": ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-2.5-pro"],
                 "model_default": "gemini-2.5-flash",
-                "message": "Gemini API 키 사용 가능" if gemini_ok else "GEMINI_API_KEY 미설정"
+                "message": "Gemini API 키 사용 가능 (2.5 Flash & 3.8 Flash)" if gemini_ok else "GEMINI_API_KEY 미설정"
+            },
+            "opencode": {
+                "available": opencode_ok,
+                "models": opencode_models,
+                "model_default": "opencode/muse-spark-1.3-contributor-free",
+                "message": "OpenCode CLI 사용 가능 (Muse Spark 1.3 탑재)" if opencode_ok else "OpenCode 미설치"
             },
             "ollama": {
                 "available": ollama_ok,

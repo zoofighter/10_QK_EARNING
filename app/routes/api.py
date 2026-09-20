@@ -783,3 +783,36 @@ def generate_custom_report():
             "status": "error",
             "message": str(e)
         }), 500
+
+# ─── GPU Cloud Rental Spot Price Endpoints ───
+
+@api_bp.route("/gpu/prices", methods=["GET"])
+def get_gpu_prices():
+    """Retrieve latest GPU spot prices, KPIs, and provider quotes."""
+    from app.services.gpu_price_collector import GpuPriceCollector
+    collector = GpuPriceCollector()
+    data = collector.get_latest_summary()
+    return jsonify(data)
+
+@api_bp.route("/gpu/history", methods=["GET"])
+def get_gpu_history():
+    """Retrieve historical rental price series for a specific GPU model."""
+    from app.services.gpu_price_collector import GpuPriceCollector
+    model_key = request.args.get("model", "H100")
+    limit = int(request.args.get("limit", 50))
+    collector = GpuPriceCollector()
+    data = collector.get_price_history(model_key=model_key, limit=limit)
+    return jsonify(data)
+
+@api_bp.route("/gpu/seed", methods=["POST"])
+def seed_gpu_prices():
+    """Seed benchmark GPU cloud rental spot history (2023~2026)."""
+    from app.services.gpu_price_collector import GpuPriceCollector
+    collector = GpuPriceCollector()
+    cnt = collector.seed_gpu_rental_history()
+    return jsonify({
+        "status": "success",
+        "seeded_count": cnt,
+        "message": f"{cnt} GPU rental spot price data points seeded successfully."
+    })
+
