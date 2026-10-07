@@ -257,6 +257,62 @@ class ReportAgent:
             "gpu_rental_latest": [dict(r) for r in gpu_rows]
         }
 
+    @staticmethod
+    def tool_get_analyst_targets_and_reports(ticker: str) -> Dict[str, Any]:
+        """Fetch analyst consensus target prices, global IB (Goldman, Citi, Nomura, etc.) actions and research reports."""
+        clean_ticker = ticker.upper().strip()
+        entity = query_db("SELECT id, ticker, name_ko, name_en, country FROM entity WHERE ticker = ?", (clean_ticker,), one=True)
+        if not entity:
+            return {"error": f"Entity not found for ticker: {clean_ticker}"}
+
+        # 1. Target price history / consensus
+        t_row = query_db(
+            """
+            SELECT target_mean, target_high, target_low,
+                   num_analysts, close_price, date
+            FROM target_price_history
+            WHERE entity_id = ?
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            (entity["id"],),
+            one=True
+        )
+
+        curr_price = t_row.get("close_price") if t_row else None
+        upside_pct = None
+        if t_row and t_row.get("target_mean") and curr_price and curr_price > 0:
+            upside_pct = round(((t_row["target_mean"] - curr_price) / curr_price) * 100, 1)
+
+        # 2. Recent Analyst Reports (Global IB & Naver Research)
+        reports = query_db(
+            """
+            SELECT broker_name AS broker, analyst_name AS author, title AS report_title,
+                   target_price, rating AS investment_opinion, report_date, source_type, local_pdf_path AS file_path
+            FROM analyst_report
+            WHERE entity_id = ?
+            ORDER BY report_date DESC
+            LIMIT 8
+            """,
+            (entity["id"],)
+        )
+
+        return {
+            "ticker": clean_ticker,
+            "company_name": entity["name_ko"] or entity["name_en"],
+            "current_price": curr_price,
+            "consensus": {
+                "mean": t_row.get("target_mean") if t_row else None,
+                "high": t_row.get("target_high") if t_row else None,
+                "low": t_row.get("target_low") if t_row else None,
+                "upside_pct": upside_pct,
+                "analyst_count": t_row.get("num_analysts") if t_row else None,
+                "currency": "KRW" if entity["country"] == "KR" else "USD",
+                "date": t_row.get("date") if t_row else None
+            },
+            "recent_reports": [dict(r) for r in reports]
+        }
+
     # =========================================================================
     # 2. Tool Definitions for Function Calling (OpenAI & Gemini Compatible)
     # =========================================================================
@@ -316,6 +372,17 @@ class ReportAgent:
                         "gpu_model": {"type": "string", "description": "GPU 모델명 ('H100', 'H200', 'B200', 'A100' 중 선택, 기본 'H100')"}
                     }
                 }
+            },
+            {
+                "name": "get_analyst_targets_and_reports",
+                "description": "글로벌 투자은행(골드만삭스, 시티, 노무라, JP모건 등) 및 국내 증권사들의 목표주가 컨센서스(평균/최고/최저), 상승여력(Upside %), 최신 투자의견 변동 및 리포트를 조회합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "ticker": {"type": "string", "description": "기업 티커 심볼 (예: NVDA, 000660.KS, TSM)"}
+                    },
+                    "required": ["ticker"]
+                }
             }
         ]
 
@@ -337,6 +404,9 @@ class ReportAgent:
         elif name == "get_gpu_rental_prices":
             gpu_model = args.get("gpu_model", "H100")
             return self.tool_get_gpu_rental_prices(gpu_model)
+        elif name == "get_analyst_targets_and_reports":
+            ticker = args.get("ticker", "NVDA")
+            return self.tool_get_analyst_targets_and_reports(ticker)
         else:
             return {"error": f"Unknown tool: {name}"}
 
@@ -684,7 +754,15 @@ class ReportAgent:
             "summary": "get_gpu_rental_prices(gpu_model='H100')"
         })
 
-        # 6. Synthesize rich prompt
+        # 6. Pre-fetch analyst targets & research reports
+        analyst_res = self.tool_get_analyst_targets_and_reports(target_ticker)
+        tools_log.append({
+            "tool": "get_analyst_targets_and_reports",
+            "args": {"ticker": target_ticker},
+            "summary": f"get_analyst_targets_and_reports(ticker={target_ticker})"
+        })
+
+        # 7. Synthesize rich prompt
         context_block = f"""
 [시스템 데이터베이스 실측 팩트 데이터 (반드시 아래 수치만 인용하십시오)]
 1. 분석 대상 기업({target_ticker}) 최근 4개 분기 실적 확정치:
@@ -703,6 +781,10 @@ class ReportAgent:
 - 메모리 현물가: {json.dumps(lead_res.get('memory_spot_latest', []), ensure_ascii=False)}
 - 관세청 반도체 수출: {json.dumps(lead_res.get('kr_semiconductor_export_latest', []), ensure_ascii=False)}
 - H100 GPU 렌탈 스팟가: {json.dumps(gpu_res.get('current_benchmark', {}), ensure_ascii=False)}
+
+6. 글로벌 IB (골드만삭스, 시티, 노무라 등) 및 증권사 목표주가 컨센서스 & 최신 리포트:
+- 컨센서스(목표가/Upside): {json.dumps(analyst_res.get('consensus', {}), ensure_ascii=False)}
+- 최근 리포트 및 투자의견 변동 내역: {json.dumps(analyst_res.get('recent_reports', []), ensure_ascii=False, indent=2)}
 """
 
         augmented_prompt = f"""{system_prompt}

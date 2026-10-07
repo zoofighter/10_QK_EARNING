@@ -24,4 +24,12 @@ def create_app():
     def serve_spa(ticker=None, id=None):
         return send_from_directory(static_folder, "index.html")
 
+    # Start background scheduler safely in main process
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        try:
+            from app.services.report_scheduler import ReportScheduler
+            ReportScheduler.get_instance().start()
+        except Exception as e:
+            print(f"Warning: Failed to start ReportScheduler: {e}")
+
     return app

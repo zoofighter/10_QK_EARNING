@@ -1023,5 +1023,130 @@ tr:hover td {
   color: #E2E8F0;
 }
 
+/* ==========================================================================
+   Analyst Reports & Target Price Styles
+   ========================================================================== */
+.badge-goldman {
+  background: rgba(234, 179, 8, 0.15);
+  color: #FACC15;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  font-weight: 600;
+}
+
+.badge-citi {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38BDF8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+  font-weight: 600;
+}
+
+.badge-jpm {
+  background: rgba(99, 102, 241, 0.15);
+  color: #A5B4FC;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  font-weight: 600;
+}
+
+.badge-ms {
+  background: rgba(168, 85, 247, 0.15);
+  color: #C084FC;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  font-weight: 600;
+}
+
+.badge-nomura {
+  background: rgba(225, 29, 72, 0.16);
+  color: #FB7185;
+  border: 1px solid rgba(225, 29, 72, 0.4);
+  font-weight: 600;
+}
+
+.badge-tier-1 {
+  background: rgba(234, 179, 8, 0.1);
+  color: #FACC15;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  font-size: 0.68rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.badge-tier-2 {
+  background: rgba(56, 189, 248, 0.1);
+  color: #38BDF8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-size: 0.68rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.badge-tier-3 {
+  background: rgba(148, 163, 184, 0.12);
+  color: #CBD5E1;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  font-size: 0.68rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.badge-naver {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  font-weight: 600;
+}
+
+.badge-upside-positive {
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.badge-upside-negative {
+  color: #EF4444;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.btn-pdf-view {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 0.25rem 0.65rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.btn-pdf-view:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: #10B981;
+  color: #fff;
+}
+
+/* FTS5 Highlight */
+mark.fts-hl {
+  background: rgba(234, 179, 8, 0.35);
+  color: #FEF08A;
+  font-weight: 700;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  border-bottom: 2px solid #FACC15;
+}
+
 
 

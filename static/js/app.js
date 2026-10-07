@@ -60,6 +60,12 @@ function switchTab(tabId) {
     loadKrExportCombinedChart();
     loadGpuRentalData();
   }
+  if (tabId === "tab-analysts") {
+    if (allEntities && allEntities.length > 0) {
+      populateAnalystCompanySelect(allEntities);
+    }
+    loadAnalystReports();
+  }
 }
 
 // 1. Overview Loader
@@ -155,6 +161,7 @@ async function loadEntities() {
     allEntities = json.data;
     renderCompanies();
     populateQuarterlyCompanySelect(allEntities);
+    populateAnalystCompanySelect(allEntities);
   } catch (err) {
     console.error("Failed to load entities:", err);
   }
@@ -202,6 +209,60 @@ function populateQuarterlyCompanySelect(entities) {
       list.forEach(e => {
         const isSel = e.ticker === currentVal ? "selected" : "";
         html += `<option value="${e.ticker}" ${isSel}>${e.ticker} (${e.name_ko})</option>`;
+      });
+      html += `</optgroup>`;
+    }
+  });
+
+  select.innerHTML = html;
+  if (!select.value) {
+    select.value = currentVal;
+  }
+}
+
+function populateAnalystCompanySelect(entities) {
+  const select = document.getElementById("analyst-ticker-select");
+  if (!select || !entities || entities.length === 0) return;
+
+  const currentVal = select.value || "000660.KS";
+
+  const layerOrder = [
+    "L5_MEMORY",
+    "L3_COMPUTE",
+    "L4_FOUNDRY",
+    "L2_HYPERSCALER",
+    "L6_OPTICAL",
+    "L7_INFRA",
+    "L8_POWER"
+  ];
+
+  const layerNames = {
+    "L2_HYPERSCALER": "L2 하이퍼스케일러",
+    "L3_COMPUTE": "L3 컴퓨팅 / AI 가속기",
+    "L4_FOUNDRY": "L4 파운드리 / 반도체 장비",
+    "L5_MEMORY": "L5 메모리 / 스토리지 (HBM)",
+    "L6_OPTICAL": "L6 광통신 / 네트워킹",
+    "L7_INFRA": "L7 인프라 / 특수",
+    "L8_POWER": "L8 전력 / 에너지 인프라"
+  };
+
+  const grouped = {};
+  entities.forEach(e => {
+    const l = e.layer_code || "ETC";
+    if (!grouped[l]) grouped[l] = [];
+    grouped[l].push(e);
+  });
+
+  let html = "";
+  layerOrder.forEach(lCode => {
+    const list = grouped[lCode];
+    if (list && list.length > 0) {
+      const label = `${layerNames[lCode] || lCode} (${list.length}개사)`;
+      html += `<optgroup label="${label}">`;
+      list.forEach(e => {
+        const isSel = e.ticker === currentVal ? "selected" : "";
+        const countryFlag = e.country === "KR" ? "🇰🇷" : (e.country === "TW" ? "🇹🇼" : "🇺🇸");
+        html += `<option value="${e.ticker}" ${isSel}>${countryFlag} ${e.ticker} (${e.name_ko})</option>`;
       });
       html += `</optgroup>`;
     }
@@ -2905,5 +2966,701 @@ async function seedGpuRentalData() {
     alert(`오류: ${err.message}`);
   }
 }
+
+// ==============================================================================
+// 11. Analyst Reports & Target Price Tracking Dashboard Logic
+// ==============================================================================
+
+let currentAnalystTierFilter = "ALL";
+let currentAnalystReportsData = null;
+let targetBandChartInstance = null;
+
+function filterAnalystTier(tier) {
+  currentAnalystTierFilter = tier;
+  document.querySelectorAll("#tab-analysts .layer-pills .layer-pill").forEach(btn => btn.classList.remove("active"));
+  
+  if (tier === "ALL") document.getElementById("filter-tier-all")?.classList.add("active");
+  if (tier === "TIER_1") document.getElementById("filter-tier-t1")?.classList.add("active");
+  if (tier === "TIER_2") document.getElementById("filter-tier-t2")?.classList.add("active");
+  if (tier === "TIER_3") document.getElementById("filter-tier-t3")?.classList.add("active");
+  if (tier === "NAVER_RESEARCH") document.getElementById("filter-tier-naver")?.classList.add("active");
+
+  loadAnalystReports();
+}
+
+async function loadAnalystReports() {
+  const sel = document.getElementById("analyst-ticker-select");
+  const ticker = sel ? sel.value : "000660.KS";
+
+  const tbody = document.getElementById("analyst-reports-tbody");
+  if (tbody) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 3rem;">리포트 데이터를 불러오는 중...</td></tr>`;
+  }
+
+  try {
+    let url = `/api/reports/analysts?ticker=${encodeURIComponent(ticker)}`;
+    if (currentAnalystTierFilter === "NAVER_RESEARCH") {
+      url += "&source_type=NAVER_RESEARCH";
+    } else if (currentAnalystTierFilter !== "ALL") {
+      url += `&tier=${currentAnalystTierFilter}`;
+    }
+
+    const res = await fetch(url);
+    const data = await res.json();
+    currentAnalystReportsData = data;
+
+    if (data.error) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-red); padding: 2rem;">${data.error}</td></tr>`;
+      return;
+    }
+
+    const currencySymbol = (data.entity && data.entity.country === "KR") ? "₩" : "$";
+    const cons = data.consensus || {};
+    const currPrice = data.current_price;
+
+    // Update KPI Cards
+    const kpiMean = document.getElementById("kpi-target-mean");
+    const kpiCurr = document.getElementById("kpi-current-price");
+    const kpiUpside = document.getElementById("kpi-target-upside");
+    const kpiRange = document.getElementById("kpi-target-range");
+    const kpiAnalysts = document.getElementById("kpi-target-analysts");
+    const kpiPdf = document.getElementById("kpi-pdf-count");
+
+    if (kpiMean) {
+      kpiMean.textContent = cons.mean ? `${currencySymbol}${Number(cons.mean).toLocaleString()}` : "-";
+    }
+    if (kpiCurr) {
+      kpiCurr.textContent = currPrice ? `현재가: ${currencySymbol}${Number(currPrice).toLocaleString()}` : "현재가: -";
+    }
+    if (kpiUpside) {
+      if (cons.mean_upside_pct !== null && cons.mean_upside_pct !== undefined) {
+        const sign = cons.mean_upside_pct >= 0 ? "+" : "";
+        kpiUpside.textContent = `${sign}${cons.mean_upside_pct}%`;
+        kpiUpside.style.color = cons.mean_upside_pct >= 0 ? "var(--accent-emerald)" : "var(--accent-red)";
+      } else {
+        kpiUpside.textContent = "-";
+      }
+    }
+    if (kpiRange) {
+      if (cons.high && cons.low) {
+        kpiRange.textContent = `${currencySymbol}${Number(cons.low).toLocaleString()} ~ ${currencySymbol}${Number(cons.high).toLocaleString()}`;
+      } else {
+        kpiRange.textContent = "-";
+      }
+    }
+    if (kpiAnalysts) {
+      kpiAnalysts.textContent = `분석 기관/의견 수: ${cons.total_opinions || data.total_reports || 0}개`;
+    }
+
+    // Count PDFs
+    const pdfCount = (data.reports || []).filter(r => r.has_pdf).length;
+    if (kpiPdf) {
+      kpiPdf.textContent = `${pdfCount} 건`;
+    }
+
+    const countBadge = document.getElementById("analyst-reports-count-badge");
+    if (countBadge) countBadge.textContent = `${data.total_reports || 0}건`;
+
+    // Render Table
+    renderAnalystReportsTable(data.reports || [], currPrice, currencySymbol);
+
+    // Render Target Band Chart
+    loadTargetBandChart(ticker);
+
+  } catch (err) {
+    console.error("Failed to load analyst reports:", err);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-red); padding: 2rem;">데이터 로드 실패: ${err.message}</td></tr>`;
+    }
+  }
+}
+
+function getBrokerBadgeClass(brokerName, sourceType) {
+  if (!brokerName) return "status-pill";
+  const b = brokerName.toLowerCase();
+  if (b.includes("goldman")) return "status-pill badge-goldman";
+  if (b.includes("citi")) return "status-pill badge-citi";
+  if (b.includes("jpmorgan") || b.includes("j.p. morgan")) return "status-pill badge-jpm";
+  if (b.includes("morgan stanley")) return "status-pill badge-ms";
+  if (b.includes("nomura") || b.includes("노무라")) return "status-pill badge-nomura";
+  if (sourceType === "NAVER_RESEARCH") return "status-pill badge-naver";
+  return "status-pill";
+}
+
+function getBrokerBadge(brokerName, sourceType = null) {
+  if (!brokerName) return `<span class="status-pill">-</span>`;
+  const badgeCls = getBrokerBadgeClass(brokerName, sourceType);
+  return `<span class="${badgeCls}">${brokerName}</span>`;
+}
+
+function getTierBadgeHtml(tier, sourceType) {
+  if (sourceType === "NAVER_RESEARCH") {
+    return `<span class="badge-naver" style="font-size: 0.68rem; padding: 0.1rem 0.35rem; border-radius: 3px;">🇰🇷 국내</span>`;
+  }
+  if (tier === "TIER_1") {
+    return `<span class="badge-tier-1">⭐ T1</span>`;
+  } else if (tier === "TIER_2") {
+    return `<span class="badge-tier-2">🥈 T2</span>`;
+  } else if (tier === "TIER_3") {
+    return `<span class="badge-tier-3">🥉 T3</span>`;
+  }
+  return "";
+}
+
+function renderAnalystReportsTable(reports, currentPrice, currencySymbol) {
+  const tbody = document.getElementById("analyst-reports-tbody");
+  if (!tbody) return;
+
+  if (!reports || reports.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 3rem;">해당 조건의 애널리스트 리포트가 없습니다.</td></tr>`;
+    return;
+  }
+
+  let html = "";
+  reports.forEach(r => {
+    const badgeClass = getBrokerBadgeClass(r.broker_name, r.source_type);
+    const tierBadge = getTierBadgeHtml(r.broker_tier, r.source_type);
+
+    // Rating Badge
+    let ratingHtml = `<span style="color: var(--text-muted);">-</span>`;
+    const rat = (r.rating || "").toLowerCase();
+    if (rat.includes("buy") || rat.includes("매수") || rat.includes("overweight") || rat.includes("outperform")) {
+      ratingHtml = `<span style="color: #10B981; font-weight: 600;">🟢 ${r.rating}</span>`;
+    } else if (rat.includes("hold") || rat.includes("중립") || rat.includes("neutral") || rat.includes("equal")) {
+      ratingHtml = `<span style="color: #F59E0B; font-weight: 600;">🟡 ${r.rating}</span>`;
+    } else if (rat.includes("sell") || rat.includes("매도") || rat.includes("underweight")) {
+      ratingHtml = `<span style="color: #EF4444; font-weight: 600;">🔴 ${r.rating}</span>`;
+    } else if (r.rating) {
+      ratingHtml = `<span>${r.rating}</span>`;
+    }
+
+    // Upside Badge
+    let upsideHtml = `<span style="color: var(--text-muted);">-</span>`;
+    if (r.upside_pct !== null && r.upside_pct !== undefined) {
+      const isPos = r.upside_pct >= 0;
+      const uClass = isPos ? "badge-upside-positive" : "badge-upside-negative";
+      const uSign = isPos ? "+" : "";
+      upsideHtml = `<span class="${uClass}">${uSign}${r.upside_pct}%</span>`;
+    }
+
+    // Target Price
+    const targetFormatted = r.target_price
+      ? `<span style="font-weight: 700; color: #fff;">${currencySymbol}${Number(r.target_price).toLocaleString()}</span>`
+      : `<span style="color: var(--text-muted);">-</span>`;
+
+    // PDF View Button
+    let pdfBtnHtml = `<span style="color: var(--text-muted); font-size: 0.75rem;">미보유</span>`;
+    if (r.has_pdf) {
+      const cleanTitle = (r.title || "리포트").replace(/['"\\]/g, "");
+      pdfBtnHtml = `<button class="btn-pdf-view" onclick="openPdfModal(${r.id}, '${cleanTitle}')"><span>📄</span> PDF 보기</button>`;
+    }
+
+    html += `
+      <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.04); transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+        <td style="padding: 0.75rem 0.6rem; font-size: 0.82rem; color: var(--text-muted); white-space: nowrap;">${r.report_date || "-"}</td>
+        <td style="padding: 0.75rem 0.6rem; white-space: nowrap;">
+          <span class="${badgeClass}">${r.broker_name || "미상"}</span>
+          ${tierBadge ? `<span style="margin-left: 0.25rem;">${tierBadge}</span>` : ""}
+        </td>
+        <td style="padding: 0.75rem 0.6rem; font-size: 0.85rem; color: #E2E8F0; max-width: 320px;">
+          <div style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${r.title || ''}">${r.title || "-"}</div>
+          ${r.summary_text ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${r.summary_text}</div>` : ""}
+        </td>
+        <td style="padding: 0.75rem 0.6rem; font-size: 0.82rem; white-space: nowrap;">${ratingHtml}</td>
+        <td style="padding: 0.75rem 0.6rem; text-align: right; font-size: 0.85rem; white-space: nowrap;">${targetFormatted}</td>
+        <td style="padding: 0.75rem 0.6rem; text-align: right; white-space: nowrap;">${upsideHtml}</td>
+        <td style="padding: 0.75rem 0.6rem; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+async function loadTargetBandChart(ticker) {
+  const canvas = document.getElementById("targetBandChart");
+  if (!canvas) return;
+
+  try {
+    const res = await fetch(`/api/reports/target-bands?ticker=${encodeURIComponent(ticker)}&days=180`);
+    const data = await res.json();
+
+    if (!data.dates || data.dates.length === 0) {
+      return;
+    }
+
+    if (targetBandChartInstance) {
+      targetBandChartInstance.destroy();
+      targetBandChartInstance = null;
+    }
+
+    const ctx = canvas.getContext("2d");
+    targetBandChartInstance = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: data.dates,
+        datasets: [
+          {
+            label: "주가 종가 (Close)",
+            data: data.close_prices,
+            borderColor: "#38BDF8",
+            backgroundColor: "rgba(56, 189, 248, 0.05)",
+            borderWidth: 2.2,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            tension: 0.15,
+            fill: false
+          },
+          {
+            label: "컨센서스 평균 (Mean Target)",
+            data: data.target_means,
+            borderColor: "#F59E0B",
+            borderDash: [5, 4],
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: false
+          },
+          {
+            label: "최고 목표가 (High Target)",
+            data: data.target_highs,
+            borderColor: "rgba(16, 185, 129, 0.4)",
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: "+1",
+            backgroundColor: "rgba(16, 185, 129, 0.08)"
+          },
+          {
+            label: "최저 목표가 (Low Target)",
+            data: data.target_lows,
+            borderColor: "rgba(239, 68, 68, 0.3)",
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: "#9CA3AF", font: { size: 11 }, usePointStyle: true }
+          },
+          tooltip: {
+            backgroundColor: "rgba(15, 23, 42, 0.92)",
+            borderColor: "rgba(255, 255, 255, 0.1)",
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              label: function(ctx) {
+                const val = ctx.parsed.y;
+                return val ? ` ${ctx.dataset.label}: ${Number(val).toLocaleString()}` : "";
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: "rgba(255, 255, 255, 0.03)" },
+            ticks: { color: "#94A3B8", font: { size: 10 }, maxTicksLimit: 12 }
+          },
+          y: {
+            grid: { color: "rgba(255, 255, 255, 0.04)" },
+            ticks: {
+              color: "#94A3B8",
+              font: { size: 10 },
+              callback: val => Number(val).toLocaleString()
+            }
+          }
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Failed to render target band chart:", err);
+  }
+}
+
+function openPdfModal(reportId, title) {
+  const modal = document.getElementById("pdf-viewer-modal");
+  const iframe = document.getElementById("pdf-modal-frame");
+  const titleEl = document.getElementById("pdf-modal-title");
+  const dlBtn = document.getElementById("pdf-modal-download-btn");
+
+  if (!modal || !iframe) return;
+
+  const pdfUrl = `/api/reports/pdf/${reportId}`;
+  if (titleEl) titleEl.textContent = `📄 ${title}`;
+  if (dlBtn) dlBtn.href = pdfUrl;
+
+  iframe.src = pdfUrl;
+  modal.style.display = "flex";
+}
+
+async function triggerCollectReports() {
+  const sel = document.getElementById("analyst-ticker-select");
+  const ticker = sel ? sel.value : "000660.KS";
+
+  const isKr = ticker.includes(".KS") || ticker.includes(".KQ");
+  const endpoint = isKr ? "/api/reports/collect/naver" : "/api/reports/collect/global-ib";
+
+  const confirmMsg = isKr
+    ? `네이버 증권에서 ${ticker}의 최신 애널리스트 리포트 및 PDF 다운로드를 시작하시겠습니까?`
+    : `Yahoo Finance에서 ${ticker}의 골드만삭스, 시티, JP모건 등 글로벌 IB 목표가 피드를 수집하시겠습니까?`;
+
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker: ticker })
+    });
+    const json = await res.json();
+
+    if (json.status === "success") {
+      alert(`✅ ${ticker} 리포트 및 목표주가 수집이 완료되었습니다!`);
+      loadAnalystReports();
+    } else {
+      alert(`수집 오류: ${json.error || JSON.stringify(json)}`);
+    }
+  } catch (err) {
+    alert(`수집 요청 실패: ${err.message}`);
+  }
+}
+
+// ──────────────────────────────────────────────
+// FinTwit AI Realtime Q&A Widget Logic
+// ──────────────────────────────────────────────
+function setFinTwitQuery(ticker, query) {
+  const input = document.getElementById("fintwit-query-input");
+  if (input) input.value = query;
+
+  const sel = document.getElementById("analyst-ticker-select");
+  if (sel && ticker) {
+    sel.value = ticker;
+    loadAnalystReports();
+  }
+
+  askFinTwitQuestion(ticker, query);
+}
+
+async function askFinTwitQuestion(overrideTicker = null, overrideQuery = null) {
+  const input = document.getElementById("fintwit-query-input");
+  const query = overrideQuery || (input ? input.value.trim() : "");
+  if (!query) {
+    alert("질문을 입력해주세요.");
+    return;
+  }
+
+  let ticker = overrideTicker;
+  if (!ticker) {
+    const sel = document.getElementById("analyst-ticker-select");
+    ticker = sel ? sel.value : "NVDA";
+
+    // Auto detect ticker from query if present
+    const upperQuery = query.toUpperCase();
+    if (upperQuery.includes("NVDA") || query.includes("엔비디아")) ticker = "NVDA";
+    else if (upperQuery.includes("TSM") || query.includes("TSMC")) ticker = "TSM";
+    else if (upperQuery.includes("000660") || query.includes("하이닉스")) ticker = "000660.KS";
+    else if (upperQuery.includes("005930") || query.includes("삼성전자")) ticker = "005930.KS";
+    else if (upperQuery.includes("MSFT") || query.includes("마이크로소프트")) ticker = "MSFT";
+    else if (upperQuery.includes("AAPL") || query.includes("애플")) ticker = "AAPL";
+    else if (upperQuery.includes("AVGO") || query.includes("브로드컴")) ticker = "AVGO";
+    else if (upperQuery.includes("AMD")) ticker = "AMD";
+  }
+
+  const resultArea = document.getElementById("fintwit-result-area");
+  const loading = document.getElementById("fintwit-loading");
+  const content = document.getElementById("fintwit-content");
+  const btn = document.getElementById("btn-fintwit-ask");
+
+  if (resultArea) resultArea.style.display = "block";
+  if (loading) loading.style.display = "block";
+  if (content) {
+    content.style.display = "none";
+    content.innerHTML = "";
+  }
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch("/api/fintwit/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker: ticker, query: query })
+    });
+    const json = await res.json();
+
+    if (loading) loading.style.display = "none";
+    if (btn) btn.disabled = false;
+
+    if (json.status !== "success" || !json.data) {
+      if (content) {
+        content.style.display = "block";
+        content.innerHTML = `<div style="color: var(--accent-red); padding: 1rem; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
+          ⚠️ AI 브리핑 생성 오류: ${json.error || "답변을 생성하지 못했습니다."}
+        </div>`;
+      }
+      return;
+    }
+
+    const data = json.data;
+    renderFinTwitBriefingCard(data, ticker);
+
+  } catch (err) {
+    if (loading) loading.style.display = "none";
+    if (btn) btn.disabled = false;
+    if (content) {
+      content.style.display = "block";
+      content.innerHTML = `<div style="color: var(--accent-red); padding: 1rem;">통신 오류: ${err.message}</div>`;
+    }
+  }
+}
+
+function renderFinTwitBriefingCard(data, ticker) {
+  const content = document.getElementById("fintwit-content");
+  if (!content) return;
+
+  const actions = data.ib_actions || [];
+  let actionsTableHtml = "";
+
+  if (actions.length > 0) {
+    actionsTableHtml = `
+      <div style="overflow-x: auto; margin: 0.8rem 0;">
+        <table class="data-table" style="font-size: 0.82rem;">
+          <thead>
+            <tr>
+              <th>기관명</th>
+              <th>애널리스트</th>
+              <th>목표주가</th>
+              <th>투자의견 / 변동</th>
+              <th>핵심 코멘트 및 논거</th>
+              <th>출처 및 일시</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${actions.map(act => {
+              const brokerBadge = getBrokerBadge(act.broker);
+              const actionBadge = act.action === "Upgrade" || act.action === "RAISES"
+                ? `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10B981; font-weight: 600;">상향 (Upgrade)</span>`
+                : (act.action === "Downgrade" || act.action === "CUTS"
+                    ? `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #EF4444; font-weight: 600;">하향 (Downgrade)</span>`
+                    : `<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94A3B8;">유지 (Maintain)</span>`);
+              
+              const currTarget = act.current_target ? `${act.currency === "KRW" ? "₩" : "$"}${Number(act.current_target).toLocaleString()}` : "-";
+              const prevTarget = act.prev_target ? ` (직전: ${act.currency === "KRW" ? "₩" : "$"}${Number(act.prev_target).toLocaleString()})` : "";
+              const tweetLink = act.tweet_url
+                ? `<a href="${act.tweet_url}" target="_blank" style="color: #38BDF8; text-decoration: underline; font-size: 0.75rem;">원문 검증 ↗</a>`
+                : (act.source_account ? `<span style="color: var(--text-muted); font-size: 0.75rem;">${act.source_account}</span>` : "");
+
+              return `
+                <tr>
+                  <td>${brokerBadge}</td>
+                  <td style="color: #E2E8F0; font-weight: 600;">${act.analyst || "-"}</td>
+                  <td>
+                    <span style="color: var(--accent-cyan); font-weight: 700; font-size: 0.95rem;">${currTarget}</span>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">${prevTarget}</span>
+                  </td>
+                  <td>
+                    ${actionBadge}
+                    ${act.rating ? `<div style="font-size: 0.75rem; color: #CBD5E1; margin-top: 2px;">${act.rating}</div>` : ""}
+                  </td>
+                  <td style="color: #CBD5E1; line-height: 1.4; max-width: 380px;">${act.key_point || "-"}</td>
+                  <td>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">${act.tweet_time || "-"}</div>
+                    <div>${tweetLink}</div>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else {
+    actionsTableHtml = `<p style="font-size: 0.85rem; color: var(--text-muted); padding: 0.5rem 0;">해당 질의에 부합하는 개별 IB 리비전 액션이 없거나 수집된 트윗 기반으로 전체 센티먼트가 도출되었습니다.</p>`;
+  }
+
+  // Sentiment Color
+  let sentColor = "#38BDF8";
+  let sentBg = "rgba(56, 189, 248, 0.15)";
+  const sentText = (data.market_sentiment || "").toLowerCase();
+  if (sentText.includes("매수") || sentText.includes("bullish") || sentText.includes("긍정") || sentText.includes("호조")) {
+    sentColor = "#10B981";
+    sentBg = "rgba(16, 185, 129, 0.15)";
+  } else if (sentText.includes("우려") || sentText.includes("bearish") || sentText.includes("하향") || sentText.includes("부진")) {
+    sentColor = "#EF4444";
+    sentBg = "rgba(239, 68, 68, 0.15)";
+  }
+
+  content.innerHTML = `
+    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 1.2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.8rem;">
+        <div>
+          <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38BDF8; font-weight: 700; margin-right: 0.5rem;">AI 질의 요약</span>
+          <strong style="color: #F8FAFC; font-size: 1rem;">${data.query_summary || ticker}</strong>
+        </div>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">Gemini Flash 실시간 합성</span>
+      </div>
+
+      <!-- IB Actions Table -->
+      <h4 style="font-size: 0.88rem; color: #94A3B8; margin-top: 0.6rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+        <span>📊</span> 감지된 글로벌 IB / 증권사 목표주가 변동
+      </h4>
+      ${actionsTableHtml}
+
+      <!-- Sentiment & Risks Grid -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+        <div style="background: ${sentBg}; border: 1px solid ${sentColor}40; border-radius: 8px; padding: 0.8rem;">
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem;">
+            <span style="color: ${sentColor}; font-weight: 700; font-size: 0.85rem;">📈 시장 센티먼트 종합</span>
+          </div>
+          <p style="font-size: 0.82rem; color: #E2E8F0; margin: 0; line-height: 1.5;">${data.market_sentiment || "중립적 센티먼트 유지"}</p>
+        </div>
+
+        <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.8rem;">
+          <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem;">
+            <span style="color: #F59E0B; font-weight: 700; font-size: 0.85rem;">⚠️ 리스크 요인 및 변수</span>
+          </div>
+          <p style="font-size: 0.82rem; color: #E2E8F0; margin: 0; line-height: 1.5;">${data.risks_mentioned || "특별히 언급된 단기 급락 리스크 없음"}</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  content.style.display = "block";
+}
+
+// ──────────────────────────────────────────────
+// PDF Full-Text Search (FTS5) Logic
+// ──────────────────────────────────────────────
+async function searchReportFts() {
+  const input = document.getElementById("report-fts-input");
+  const query = input ? input.value.trim() : "";
+  if (!query) {
+    alert("검색어를 입력해주세요. (예: HBM, Blackwell, 자사주, CapEx)");
+    return;
+  }
+
+  const resultsDiv = document.getElementById("report-fts-results");
+  const loading = document.getElementById("report-fts-loading");
+  const list = document.getElementById("report-fts-list");
+
+  if (resultsDiv) resultsDiv.style.display = "block";
+  if (loading) loading.style.display = "block";
+  if (list) list.innerHTML = "";
+
+  try {
+    const res = await fetch(`/api/reports/search?q=${encodeURIComponent(query)}`);
+    const json = await res.json();
+
+    if (loading) loading.style.display = "none";
+
+    if (json.status !== "success" || !json.results || json.results.length === 0) {
+      list.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
+        "${query}" 키워드가 포함된 리포트 본문 결과가 없습니다.
+      </div>`;
+      return;
+    }
+
+    list.innerHTML = `
+      <div style="font-size: 0.85rem; color: #C084FC; margin-bottom: 0.8rem; font-weight: 600;">
+        총 ${json.count}건의 리포트 본문에서 검색되었습니다.
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        ${json.results.map(r => {
+          const brokerBadge = getBrokerBadge(r.broker_name);
+          const currTarget = r.target_price ? `${r.currency === "KRW" ? "₩" : "$"}${Number(r.target_price).toLocaleString()}` : "-";
+          return `
+            <div class="card" style="padding: 0.9rem; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.4rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                  ${brokerBadge}
+                  <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-weight: 700;">${r.ticker}</span>
+                  <strong style="color: #F8FAFC; font-size: 0.92rem;">${r.title}</strong>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                  <span style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 700;">목표가: ${currTarget}</span>
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">${r.report_date}</span>
+                  <button class="btn-pdf-view" onclick="openPdfModal(${r.report_id}, '${r.title.replace(/'/g, "\\'")}')">
+                    <span>📄</span> PDF 열기
+                  </button>
+                </div>
+              </div>
+              <div style="font-size: 0.82rem; color: #CBD5E1; line-height: 1.5; background: rgba(0, 0, 0, 0.25); padding: 0.6rem 0.8rem; border-radius: 6px; border-left: 3px solid #C084FC;">
+                ${r.snippet}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+
+  } catch (err) {
+    if (loading) loading.style.display = "none";
+    if (list) list.innerHTML = `<div style="color: var(--accent-red); padding: 1rem;">검색 오류: ${err.message}</div>`;
+  }
+}
+
+async function triggerIndexAllPdfs() {
+  if (!confirm("다운로드된 모든 리포트 PDF의 본문 텍스트를 추출하여 FTS5 검색 엔진에 색인하시겠습니까?")) return;
+
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch("/api/reports/index-all", { method: "POST" });
+    const json = await res.json();
+    alert(`✅ PDF 색인 완료!\n- 신규 색인: ${json.indexed_count}건\n- 기존 색인 유지: ${json.skipped_count}건\n- 전체 대상: ${json.total_candidates}건`);
+  } catch (err) {
+    alert(`색인 요청 실패: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Scheduler Controls Logic
+// ──────────────────────────────────────────────
+async function toggleSchedulerModal() {
+  try {
+    const res = await fetch("/api/scheduler/status");
+    const json = await res.json();
+    const d = json.data || {};
+    const statusText = d.is_running ? "가동중 (ACTIVE)" : "중지됨 (STOPPED)";
+    const nextKr = d.next_kr_morning_run || "-";
+    const nextUs = d.next_us_evening_run || "-";
+    const lastKr = d.last_kr_run || "아직 없음";
+    const lastUs = d.last_us_run || "아직 없음";
+
+    const action = confirm(
+      `⏰ [장전 자동수집 스케줄러 상태]\n` +
+      `• 상태: ${statusText}\n` +
+      `• 다음 국내 장전 수집: ${nextKr} (네이버 리포트 & PDF)\n` +
+      `• 다음 미국 장전 수집: ${nextUs} (글로벌 IB 리비전 & FinTwit)\n` +
+      `• 최근 실행: 국내(${lastKr}) / 미국(${lastUs})\n\n` +
+      `[확인]을 누르면 지금 즉시 수집(강제 실행)을 진행합니다.\n[취소]를 누르면 닫습니다.`
+    );
+
+    if (action) {
+      const runRes = await fetch("/api/scheduler/run-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_type: "ALL" })
+      });
+      const runJson = await runRes.json();
+      alert(`✅ 장전 자동 수집 작업이 성공적으로 실행되었습니다!`);
+      loadAnalystReports();
+    }
+  } catch (e) {
+    alert(`스케줄러 상태 조회 오류: ${e.message}`);
+  }
+}
+
+
+
 
 

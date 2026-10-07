@@ -816,3 +816,374 @@ def seed_gpu_prices():
         "message": f"{cnt} GPU rental spot price data points seeded successfully."
     })
 
+# ==============================================================================
+# Analyst Reports & Target Price Tracking APIs
+# ==============================================================================
+
+@api_bp.route("/reports/analysts", methods=["GET"])
+def get_analyst_reports():
+    """
+    Get list of analyst reports and target prices for a ticker.
+    Returns consensus mean/high/low and individual report actions.
+    """
+    ticker = request.args.get("ticker", "").strip()
+    source_type = request.args.get("source_type", "ALL").strip()
+    tier_filter = request.args.get("tier", "ALL").strip().upper()
+    limit = int(request.args.get("limit", 60))
+
+    if not ticker:
+        return jsonify({"error": "ticker parameter is required"}), 400
+
+    entity = query_db("SELECT id, ticker, name_en, name_ko, country FROM entity WHERE ticker = ?", (ticker,), one=True)
+    if not entity:
+        return jsonify({"error": f"Entity not found for ticker {ticker}"}), 404
+
+    # Latest stock price
+    price_row = query_db(
+        "SELECT close, date FROM stock_price WHERE entity_id = ? ORDER BY date DESC LIMIT 1",
+        (entity["id"],),
+        one=True
+    )
+    current_price = float(price_row["close"]) if price_row else None
+    latest_price_date = price_row["date"] if price_row else None
+
+    # Latest consensus snapshot from target_price_history
+    hist_row = query_db(
+        "SELECT * FROM target_price_history WHERE entity_id = ? ORDER BY date DESC LIMIT 1",
+        (entity["id"],),
+        one=True
+    )
+
+    # Build SQL for reports
+    sql = """
+        SELECT id, entity_id, ticker, source_type, broker_name, analyst_name,
+               report_date, title, rating, action_type, target_price,
+               current_price_at_report, upside_pct, currency, pdf_url,
+               local_pdf_path, summary_text, created_at
+        FROM analyst_report
+        WHERE entity_id = ?
+    """
+    params = [entity["id"]]
+
+    if source_type and source_type != "ALL":
+        sql += " AND source_type = ?"
+        params.append(source_type)
+
+    sql += " ORDER BY report_date DESC, id DESC LIMIT ?"
+    params.append(limit * 2 if tier_filter != "ALL" else limit)
+
+    raw_reports = query_db(sql, params)
+
+    from app.services.ib_target_collector import IBTargetCollector
+    filtered_reports = []
+    for r in raw_reports:
+        # Determine tier
+        r["broker_tier"] = IBTargetCollector.get_broker_tier(r["broker_name"])
+        r["has_pdf"] = bool(r["local_pdf_path"])
+        # Recalculate upside vs current price if missing
+        if r["target_price"] and current_price and current_price > 0 and not r.get("upside_pct"):
+            r["upside_pct"] = round(((r["target_price"] - current_price) / current_price) * 100.0, 2)
+
+        # Apply tier filter if requested
+        if tier_filter != "ALL":
+            if r["broker_tier"] != tier_filter:
+                continue
+
+        filtered_reports.append(r)
+        if len(filtered_reports) >= limit:
+            break
+
+    reports = filtered_reports
+
+    # Compute consensus stats dynamically from reports if history is empty
+    target_prices = [r["target_price"] for r in reports if r["target_price"] and r["target_price"] > 0]
+    mean_target = (sum(target_prices) / len(target_prices)) if target_prices else (hist_row["target_mean"] if hist_row else None)
+    high_target = max(target_prices) if target_prices else (hist_row["target_high"] if hist_row else None)
+    low_target = min(target_prices) if target_prices else (hist_row["target_low"] if hist_row else None)
+
+    mean_upside = None
+    if mean_target and current_price and current_price > 0:
+        mean_upside = round(((mean_target - current_price) / current_price) * 100.0, 2)
+
+    return jsonify({
+        "ticker": ticker,
+        "entity": {
+            "id": entity["id"],
+            "name_en": entity["name_en"],
+            "name_ko": entity["name_ko"],
+            "country": entity["country"]
+        },
+        "current_price": current_price,
+        "latest_price_date": latest_price_date,
+        "consensus": {
+            "mean": round(mean_target, 2) if mean_target else None,
+            "high": round(high_target, 2) if high_target else None,
+            "low": round(low_target, 2) if low_target else None,
+            "mean_upside_pct": mean_upside,
+            "total_opinions": len(target_prices) or (hist_row["num_analysts"] if hist_row else 0)
+        },
+        "total_reports": len(reports),
+        "reports": reports
+    })
+
+@api_bp.route("/reports/collect/naver", methods=["POST"])
+def collect_naver_reports():
+    """Trigger collection of Naver Securities research reports and download PDFs."""
+    from app.services.naver_report_collector import NaverReportCollector
+    data = request.get_json() or {}
+    ticker = data.get("ticker", "000660.KS").strip()
+    download_pdf = data.get("download_pdf", True)
+    max_scan_pages = int(data.get("max_scan_pages", 6))
+
+    collector = NaverReportCollector(delay_sec=0.5)
+    result = collector.collect_reports_for_ticker(
+        ticker=ticker,
+        download_pdf=download_pdf,
+        max_scan_pages=max_scan_pages
+    )
+    return jsonify({
+        "status": "success",
+        "result": result
+    })
+
+@api_bp.route("/reports/collect/global-ib", methods=["POST"])
+def collect_global_ib_reports():
+    """Trigger collection of Global IB target prices and recommendations."""
+    from app.services.ib_target_collector import IBTargetCollector
+    data = request.get_json() or {}
+    ticker = data.get("ticker", "NVDA").strip()
+
+    collector = IBTargetCollector()
+    result = collector.collect_ib_targets_for_ticker(ticker=ticker)
+    return jsonify({
+        "status": "success",
+        "result": result
+    })
+
+@api_bp.route("/reports/target-bands", methods=["GET"])
+def get_target_bands():
+    """
+    Get historical stock prices along with target price bands (Mean, High, Low)
+    for chart overlay visualization.
+    """
+    ticker = request.args.get("ticker", "").strip()
+    days = int(request.args.get("days", 180))
+
+    if not ticker:
+        return jsonify({"error": "ticker parameter is required"}), 400
+
+    entity = query_db("SELECT id, ticker FROM entity WHERE ticker = ?", (ticker,), one=True)
+    if not entity:
+        return jsonify({"error": f"Entity not found for ticker {ticker}"}), 404
+
+    # Stock prices
+    prices = query_db(
+        """
+        SELECT date, close FROM stock_price
+        WHERE entity_id = ?
+        ORDER BY date ASC
+        """,
+        (entity["id"],)
+    )
+
+    if not prices:
+        return jsonify({"ticker": ticker, "dates": [], "prices": [], "target_means": []})
+
+    # Slice to last N days
+    prices = prices[-days:]
+    dates = [p["date"] for p in prices]
+    close_prices = [p["close"] for p in prices]
+
+    # Target price history snapshots
+    t_hist = query_db(
+        """
+        SELECT date, target_mean, target_high, target_low FROM target_price_history
+        WHERE entity_id = ?
+        ORDER BY date ASC
+        """,
+        (entity["id"],)
+    )
+    t_map = {row["date"]: row for row in t_hist}
+
+    # Analyst reports points for scatter markers
+    actions = query_db(
+        """
+        SELECT report_date, broker_name, target_price, rating, action_type, source_type
+        FROM analyst_report
+        WHERE entity_id = ? AND target_price IS NOT NULL AND target_price > 0
+        ORDER BY report_date ASC
+        """,
+        (entity["id"],)
+    )
+
+    # Current consensus fallback to fill line across dates if history is sparse
+    latest_hist = t_hist[-1] if t_hist else None
+    latest_mean = latest_hist["target_mean"] if latest_hist else None
+    latest_high = latest_hist["target_high"] if latest_hist else None
+    latest_low = latest_hist["target_low"] if latest_hist else None
+
+    # If no target_price_history, compute from latest reports
+    if not latest_mean and actions:
+        recent_targets = [a["target_price"] for a in actions[-10:] if a["target_price"]]
+        if recent_targets:
+            latest_mean = round(sum(recent_targets) / len(recent_targets), 2)
+            latest_high = max(recent_targets)
+            latest_low = min(recent_targets)
+
+    target_means = []
+    target_highs = []
+    target_lows = []
+    for d in dates:
+        if d in t_map:
+            target_means.append(t_map[d]["target_mean"])
+            target_highs.append(t_map[d]["target_high"])
+            target_lows.append(t_map[d]["target_low"])
+        else:
+            # Carry forward or fallback to latest
+            target_means.append(latest_mean)
+            target_highs.append(latest_high)
+            target_lows.append(latest_low)
+
+    return jsonify({
+        "ticker": ticker,
+        "dates": dates,
+        "close_prices": close_prices,
+        "target_means": target_means,
+        "target_highs": target_highs,
+        "target_lows": target_lows,
+        "actions": actions
+    })
+
+@api_bp.route("/reports/pdf/<int:report_id>", methods=["GET"])
+def stream_report_pdf(report_id):
+    """Stream locally stored analyst report PDF to browser viewer."""
+    from app.config import DATA_DIR
+    row = query_db("SELECT local_pdf_path, title FROM analyst_report WHERE id = ?", (report_id,), one=True)
+    if not row or not row["local_pdf_path"]:
+        return jsonify({"error": "Report PDF not found on server"}), 404
+
+    local_path = DATA_DIR / row["local_pdf_path"]
+    if not local_path.exists():
+        # Try relative to reports dir
+        from app.config import REPORTS_DIR
+        alt_path = REPORTS_DIR / row["local_pdf_path"]
+        if alt_path.exists():
+            local_path = alt_path
+        else:
+            return jsonify({"error": f"PDF file missing on disk: {row['local_pdf_path']}"}), 404
+
+    return send_file(
+        local_path,
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=f"Report_{report_id}.pdf"
+    )
+
+@api_bp.route("/fintwit/ask", methods=["POST"])
+def ask_fintwit_agent():
+    """
+    On-Demand FinTwit Q&A Agent Endpoint.
+    Takes natural language questions about price targets & comments and returns
+    structured markdown tables, sentiment, and quotes.
+    """
+    from app.services.fintwit_qa_agent import FinTwitQAAgent
+    data = request.get_json() or {}
+    query_text = data.get("query", "").strip()
+    ticker = data.get("ticker", "").strip() or None
+
+    if not query_text:
+        return jsonify({"error": "query parameter is required"}), 400
+
+    agent = FinTwitQAAgent()
+    result = agent.answer_query(user_query=query_text, ticker=ticker)
+    return jsonify(result)
+
+@api_bp.route("/fintwit/stream", methods=["GET"])
+def get_fintwit_stream():
+    """Get live social and news stream from StockTwits for a ticker."""
+    from app.services.fintwit_qa_agent import FinTwitQAAgent
+    ticker = request.args.get("ticker", "NVDA").strip()
+    limit = int(request.args.get("limit", 20))
+
+    agent = FinTwitQAAgent()
+    posts = agent.fetch_live_fintwit_stream(ticker=ticker, limit=limit)
+    return jsonify({
+        "ticker": ticker,
+        "total_posts": len(posts),
+        "posts": posts
+    })
+
+
+# ─── PDF Full-Text Search (FTS5) ───
+
+@api_bp.route("/reports/search", methods=["GET"])
+def search_analyst_reports_fts():
+    """Full-text search inside analyst report PDFs via FTS5."""
+    from app.services.pdf_indexer import PdfReportIndexer
+    query = request.args.get("q", "").strip()
+    ticker = request.args.get("ticker", "").strip() or None
+    limit = int(request.args.get("limit", 15))
+
+    if not query:
+        return jsonify({"status": "success", "results": [], "query": ""})
+
+    results = PdfReportIndexer.search_reports(query=query, ticker=ticker, limit=limit)
+    return jsonify({
+        "status": "success",
+        "query": query,
+        "ticker": ticker,
+        "count": len(results),
+        "results": results
+    })
+
+
+@api_bp.route("/reports/index-all", methods=["POST"])
+def index_all_reports_fts():
+    """Trigger background text extraction and FTS5 indexing for all downloaded PDFs."""
+    from app.services.pdf_indexer import PdfReportIndexer
+    res = PdfReportIndexer.index_all_reports_background()
+    return jsonify(res)
+
+
+@api_bp.route("/reports/index-status", methods=["GET"])
+def get_reports_index_status():
+    """Check progress of PDF FTS5 indexing."""
+    from app.services.pdf_indexer import PdfReportIndexer
+    status = PdfReportIndexer.get_indexing_status()
+    return jsonify({"status": "success", "data": status})
+
+
+# ─── Automated Pre-Market Scheduler ───
+
+@api_bp.route("/scheduler/status", methods=["GET"])
+def get_scheduler_status():
+    """Get current status, next run times, and recent logs of the scheduler."""
+    from app.services.report_scheduler import ReportScheduler
+    sch = ReportScheduler.get_instance()
+    return jsonify({"status": "success", "data": sch.get_status()})
+
+
+@api_bp.route("/scheduler/toggle", methods=["POST"])
+def toggle_scheduler():
+    """Start or stop the background scheduler."""
+    from app.services.report_scheduler import ReportScheduler
+    sch = ReportScheduler.get_instance()
+    if sch.is_running:
+        sch.stop()
+    else:
+        sch.start()
+    return jsonify({"status": "success", "data": sch.get_status()})
+
+
+@api_bp.route("/scheduler/run-now", methods=["POST"])
+def run_scheduler_now():
+    """Trigger immediate execution of pre-market jobs."""
+    from app.services.report_scheduler import ReportScheduler
+    data = request.get_json() or {}
+    job_type = data.get("job_type", "ALL")
+    sch = ReportScheduler.get_instance()
+    result = sch.run_now(job_type=job_type)
+    return jsonify({"status": "success", "data": result})
+
+
+

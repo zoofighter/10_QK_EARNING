@@ -220,6 +220,78 @@ CREATE TABLE IF NOT EXISTS llm_summary (
     FOREIGN KEY (earning_call_id) REFERENCES earning_call(id) ON DELETE SET NULL,
     FOREIGN KEY (entity_id) REFERENCES entity(id) ON DELETE CASCADE
 );
+
+-- 13. Analyst Reports (Naver Research, Global IB, User Uploads)
+CREATE TABLE IF NOT EXISTS analyst_report (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id INTEGER NOT NULL,
+    ticker TEXT NOT NULL,
+    source_type TEXT NOT NULL, -- 'GLOBAL_IB', 'NAVER_RESEARCH', 'TWITTER_FINTWIT', 'USER_UPLOAD'
+    broker_name TEXT NOT NULL,
+    analyst_name TEXT,
+    report_date TEXT NOT NULL,
+    title TEXT NOT NULL,
+    rating TEXT, -- Buy, Hold, Sell, Outperform, Neutral, etc.
+    action_type TEXT, -- Maintain, Upgrade, Downgrade, Initiate
+    target_price REAL,
+    current_price_at_report REAL,
+    upside_pct REAL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    pdf_url TEXT,
+    local_pdf_path TEXT,
+    summary_text TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (entity_id) REFERENCES entity(id) ON DELETE CASCADE,
+    UNIQUE (entity_id, broker_name, report_date, title)
+);
+
+CREATE INDEX IF NOT EXISTS idx_analyst_report_ticker_date ON analyst_report(ticker, report_date DESC);
+CREATE INDEX IF NOT EXISTS idx_analyst_report_broker ON analyst_report(broker_name);
+
+-- 14. Target Price History (Overlay Consensus Bands)
+CREATE TABLE IF NOT EXISTS target_price_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    close_price REAL NOT NULL,
+    target_mean REAL,
+    target_high REAL,
+    target_low REAL,
+    num_analysts INTEGER,
+    key_ib_targets_json TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (entity_id) REFERENCES entity(id) ON DELETE CASCADE,
+    UNIQUE (entity_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_target_hist_lookup ON target_price_history(entity_id, date DESC);
+
+-- 15. FinTwit Posts (Real-time Breaking News Tweets)
+CREATE TABLE IF NOT EXISTS fintwit_post (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    author_username TEXT NOT NULL,
+    tweet_id TEXT UNIQUE,
+    content_text TEXT NOT NULL,
+    posted_at TEXT NOT NULL,
+    extracted_broker TEXT,
+    extracted_target REAL,
+    extracted_action TEXT,
+    tweet_url TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_fintwit_ticker_date ON fintwit_post(ticker, posted_at DESC);
+
+-- 15. Analyst Report Full-Text Search (FTS5)
+CREATE VIRTUAL TABLE IF NOT EXISTS analyst_report_fts USING fts5(
+    report_id UNINDEXED,
+    ticker,
+    broker_name,
+    title,
+    content_text,
+    tokenize = 'unicode61'
+);
 """
 
 def init_database():
@@ -228,6 +300,10 @@ def init_database():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     for folder in ["10-Q", "10-K", "8-K", "20-F", "6-K", "earning_calls"]:
         (FILINGS_DIR / folder).mkdir(parents=True, exist_ok=True)
+
+    from app.config import KR_REPORTS_DIR, GLOBAL_REPORTS_DIR
+    KR_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    GLOBAL_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"📁 Verified data directories at {DATA_DIR}")
 

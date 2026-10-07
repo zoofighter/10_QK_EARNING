@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QK_EARNING — AI 밸류체인 실적 & 공시 인텔리전스</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=20260921_3">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -46,6 +46,9 @@
       </button>
       <button class="nav-tab-btn" id="btn-tab-indicators" onclick="switchTab('tab-indicators')">
         <span>🌐</span> 선행지표
+      </button>
+      <button class="nav-tab-btn" id="btn-tab-analysts" onclick="switchTab('tab-analysts')">
+        <span>🎯</span> 리포트 & 목표가
       </button>
       <button class="nav-tab-btn" id="btn-tab-console" onclick="switchTab('tab-console')">
         <span>⚡</span> 수집 콘솔
@@ -1070,6 +1073,226 @@
       </div>
     </section>
 
+    <!-- 11. ANALYST REPORTS & TARGET PRICES TAB -->
+    <section id="tab-analysts" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title"><span>🎯</span> 애널리스트 리포트 & 목표주가 인텔리전스</h2>
+          <div style="display: flex; align-items: center; gap: 0.6rem; margin-top: 0.3rem;">
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">
+              골드만삭스, 시티, JP모건 등 글로벌 IB의 목표주가 변경과 네이버 증권 리포트(원문 PDF)를 실시간 추적합니다.
+            </p>
+            <span id="scheduler-status-chip" class="status-pill" style="font-size: 0.72rem; background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3); cursor: pointer;" onclick="toggleSchedulerModal()" title="클릭 시 장전 스케줄러 상태 확인 및 강제 실행">
+              ⏰ 장전 자동수집: 가동중 (08:00 / 21:00)
+            </span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center;">
+          <select id="analyst-ticker-select" class="btn" style="background: var(--bg-card); color: var(--accent-cyan); font-weight: 600; min-width: 250px;" onchange="loadAnalystReports()">
+            <optgroup label="L5 메모리 / 스토리지 (HBM) (5개사)">
+              <option value="000660.KS" selected>🇰🇷 000660.KS (SK하이닉스)</option>
+              <option value="005930.KS">🇰🇷 005930.KS (삼성전자)</option>
+              <option value="MU">🇺🇸 MU (마이크론 테크놀로지)</option>
+              <option value="WDC">🇺🇸 WDC (웨스턴 디지털)</option>
+              <option value="6600.T">🇯🇵 6600.T (키옥시아)</option>
+            </optgroup>
+            <optgroup label="L3 컴퓨팅 / AI 가속기 (5개사)">
+              <option value="NVDA">🇺🇸 NVDA (엔비디아)</option>
+              <option value="AMD">🇺🇸 AMD (AMD)</option>
+              <option value="AVGO">🇺🇸 AVGO (브로드컴)</option>
+              <option value="ARM">🇺🇸 ARM (Arm)</option>
+              <option value="INTC">🇺🇸 INTC (인텔)</option>
+            </optgroup>
+            <optgroup label="L4 파운드리 / 반도체 장비 (7개사)">
+              <option value="TSM">🇹🇼 TSM (TSMC)</option>
+              <option value="ASML">🇺🇸 ASML (ASML)</option>
+              <option value="AMAT">🇺🇸 AMAT (어플라이드 머티어리얼즈)</option>
+              <option value="LRCX">🇺🇸 LRCX (램리서치)</option>
+              <option value="KLAC">🇺🇸 KLAC (KLA)</option>
+              <option value="ASX">🇹🇼 ASX (ASE 日月光)</option>
+              <option value="AMKR">🇺🇸 AMKR (앰코 테크놀로지)</option>
+            </optgroup>
+            <optgroup label="L2 하이퍼스케일러 (7개사)">
+              <option value="MSFT">🇺🇸 MSFT (마이크로소프트)</option>
+              <option value="GOOGL">🇺🇸 GOOGL (구글/알파벳)</option>
+              <option value="AMZN">🇺🇸 AMZN (아마존)</option>
+              <option value="META">🇺🇸 META (메타)</option>
+              <option value="ORCL">🇺🇸 ORCL (오라클)</option>
+              <option value="CRWV">🇺🇸 CRWV (코어위브)</option>
+              <option value="NBIS">🇺🇸 NBIS (네비우스)</option>
+            </optgroup>
+            <optgroup label="L6 광통신 / 네트워킹 (3개사)">
+              <option value="ANET">🇺🇸 ANET (아리스타 네트웍스)</option>
+              <option value="MRVL">🇺🇸 MRVL (마벨 테크놀로지)</option>
+              <option value="COHR">🇺🇸 COHR (코히어런트)</option>
+            </optgroup>
+            <optgroup label="L7 인프라 / 특수 (3개사)">
+              <option value="AAPL">🇺🇸 AAPL (애플)</option>
+              <option value="9984.T">🇯🇵 9984.T (소프트뱅크 그룹)</option>
+              <option value="SPACEX">🇺🇸 SPACEX (스페이스X / xAI)</option>
+            </optgroup>
+            <optgroup label="L8 전력 / 에너지 인프라 (4개사)">
+              <option value="VRT">🇺🇸 VRT (버티브 홀딩스)</option>
+              <option value="ETN">🇺🇸 ETN (이튼)</option>
+              <option value="GEV">🇺🇸 GEV (GE 버노바)</option>
+              <option value="SBGSF">🇺🇸 SBGSF (슈나이더 일렉트릭)</option>
+            </optgroup>
+          </select>
+          <button class="btn btn-primary" onclick="triggerCollectReports()">
+            <span>📥</span> 최신 리포트 수집
+          </button>
+        </div>
+      </div>
+
+      <!-- FinTwit Realtime AI Q&A Widget -->
+      <div class="card" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%); border: 1px solid rgba(56, 189, 248, 0.25); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-size: 1.25rem;">🐦</span>
+            <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: #38BDF8;">FinTwit & IB 실시간 AI 질의응답 (On-Demand Q&A)</h3>
+            <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.72rem; border: 1px solid rgba(56, 189, 248, 0.3);">LIVE INTELLIGENCE</span>
+          </div>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">골드만삭스, 시티 등 월가 속보 트윗 & 리포트 실시간 정제</span>
+        </div>
+
+        <div style="display: flex; gap: 0.6rem; margin-bottom: 0.75rem;">
+          <input type="text" id="fintwit-query-input" class="search-box" style="flex: 1; padding: 0.65rem 1rem; border-radius: 8px; font-size: 0.9rem; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.15); color: #fff;" placeholder="질문 입력: 예) 엔비디아 최근 골드만삭스와 시티의 목표가와 주요 이유를 요약해줘" onkeydown="if(event.key==='Enter') askFinTwitQuestion()">
+          <button id="btn-fintwit-ask" class="btn btn-primary" style="padding: 0.65rem 1.2rem; white-space: nowrap; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;" onclick="askFinTwitQuestion()">
+            <span>⚡</span> AI 실시간 브리핑 요청
+          </button>
+        </div>
+
+        <!-- Suggestion Chips -->
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+          <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">빠른 질의:</span>
+          <button class="chip" onclick="setFinTwitQuery('NVDA', '최근 골드만삭스와 시티의 엔비디아 목표주가 변동과 핵심 논거 요약해줘')">📌 NVDA 골드만/시티 목표가</button>
+          <button class="chip" onclick="setFinTwitQuery('TSM', 'TSMC의 최근 월가 투자의견과 CoWoS 패키징 공급망 반응 요약')">📌 TSM 월가 의견 & CoWoS</button>
+          <button class="chip" onclick="setFinTwitQuery('000660.KS', 'SK하이닉스의 HBM3E 및 12단 관련 국내외 증권사 목표주가 컨센서스 요약')">📌 SK하이닉스 HBM3E 컨센서스</button>
+          <button class="chip" onclick="setFinTwitQuery('MSFT', '마이크로소프트의 클라우드 CapEx 및 AI 수익성에 대한 월가 센티먼트')">📌 MSFT CapEx & 센티먼트</button>
+        </div>
+
+        <!-- AI Briefing Result Area (Hidden initially) -->
+        <div id="fintwit-result-area" style="display: none; margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <div id="fintwit-loading" style="display: none; text-align: center; padding: 2rem; color: #38BDF8;">
+            <div style="font-size: 1.5rem; margin-bottom: 0.5rem; animation: spin 1s linear infinite;">⏳</div>
+            <p style="font-size: 0.88rem; font-weight: 500;">FinTwit 실시간 속보 수신 및 Gemini AI 브리핑 카드 작성 중...</p>
+          </div>
+          <div id="fintwit-content" style="display: none;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Metrics -->
+      <div class="kpi-grid" style="margin-bottom: 1.5rem;">
+        <div class="kpi-card">
+          <div class="kpi-label"><span>컨센서스 목표가 (평균)</span><span>🎯</span></div>
+          <div class="kpi-value" id="kpi-target-mean" style="color: var(--accent-cyan);">-</div>
+          <div class="kpi-sub" id="kpi-current-price">현재가: -</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>평균 상승여력 (Upside)</span><span>🚀</span></div>
+          <div class="kpi-value" id="kpi-target-upside" style="color: var(--accent-emerald);">-</div>
+          <div class="kpi-sub">목표가 vs 현재가 괴리율</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>목표주가 밴드 (High/Low)</span><span>📊</span></div>
+          <div class="kpi-value" id="kpi-target-range" style="font-size: 1.25rem;">-</div>
+          <div class="kpi-sub" id="kpi-target-analysts">분석 기관 수: -</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span>원문 PDF 보관</span><span>📑</span></div>
+          <div class="kpi-value" id="kpi-pdf-count" style="color: var(--accent-purple);">-</div>
+          <div class="kpi-sub">로컬 즉시 열람 가능</div>
+        </div>
+      </div>
+
+      <!-- Main Target Band Chart & Timeline -->
+      <div class="glass-panel" style="margin-bottom: 1.5rem; padding: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="font-size: 1.05rem; color: #fff; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📈</span> 주가 추이 vs 목표가 컨센서스 밴드
+          </h3>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <span class="status-pill" style="font-size: 0.75rem;">밴드: High ~ Low (음영) / Mean (점선)</span>
+          </div>
+        </div>
+        <div style="height: 320px; position: relative;">
+          <canvas id="targetBandChart"></canvas>
+        </div>
+      </div>
+
+      <!-- FTS5 Full-Text Search Panel -->
+      <div class="glass-panel" style="margin-bottom: 1.5rem; padding: 1.25rem; border: 1px solid rgba(168, 85, 247, 0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-size: 1.15rem;">🔍</span>
+            <h3 style="font-size: 1.05rem; color: #fff; margin: 0; font-weight: 700;">다운로드 리포트 본문 통합 검색 (FTS5 Index)</h3>
+            <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #C084FC; font-size: 0.72rem; border: 1px solid rgba(168, 85, 247, 0.4);">원문 PDF 전문 색인</span>
+          </div>
+          <button class="btn" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;" onclick="triggerIndexAllPdfs()">
+            <span>⚡</span> 신규 PDF 일괄 색인
+          </button>
+        </div>
+
+        <div style="display: flex; gap: 0.6rem; margin-bottom: 0.8rem;">
+          <input type="text" id="report-fts-input" class="search-box" style="flex: 1; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.88rem; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.15); color: #fff;" placeholder="본문 키워드 검색: 예) HBM3E, Blackwell 수율, 자사주 소각, CapEx, 파운드리 흑자..." onkeydown="if(event.key==='Enter') searchReportFts()">
+          <button class="btn btn-primary" style="padding: 0.6rem 1.2rem; font-weight: 600;" onclick="searchReportFts()">
+            <span>🔎</span> 본문 검색
+          </button>
+        </div>
+
+        <!-- FTS Search Results Container -->
+        <div id="report-fts-results" style="display: none; margin-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 1rem;">
+          <div id="report-fts-loading" style="display: none; text-align: center; padding: 1.5rem; color: var(--accent-purple);">
+            <div style="font-size: 1.3rem; margin-bottom: 0.4rem;">⏳</div>
+            <p style="font-size: 0.85rem;">FTS5 본문 색인에서 키워드 스니펫 검색 중...</p>
+          </div>
+          <div id="report-fts-list"></div>
+        </div>
+      </div>
+
+      <!-- Analyst Reports Archive Table -->
+      <div class="glass-panel" style="padding: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.8rem;">
+            <h3 style="font-size: 1.05rem; color: #fff; margin: 0;">📋 애널리스트 리포트 & 목표가 변동 내역</h3>
+            <span id="analyst-reports-count-badge" class="status-pill" style="font-size: 0.75rem;">0건</span>
+          </div>
+          
+          <!-- Source & Tier Filter Pills -->
+          <div class="layer-pills" style="flex-wrap: wrap; gap: 0.35rem;">
+            <button class="layer-pill active" id="filter-tier-all" onclick="filterAnalystTier('ALL')">전체보기</button>
+            <button class="layer-pill" id="filter-tier-t1" onclick="filterAnalystTier('TIER_1')" title="Goldman, Citi, JPM, MS, BofA">⭐ Tier 1 (5대 대형IB)</button>
+            <button class="layer-pill" id="filter-tier-t2" onclick="filterAnalystTier('TIER_2')" title="Nomura(노무라), Barclays, UBS, Bernstein, Jefferies">🥈 Tier 2 (노무라·유럽계)</button>
+            <button class="layer-pill" id="filter-tier-t3" onclick="filterAnalystTier('TIER_3')" title="Mizuho, Evercore, Needham, Piper, Rosenblatt">🥉 Tier 3 (Tech 부티크)</button>
+            <button class="layer-pill" id="filter-tier-naver" onclick="filterAnalystTier('NAVER_RESEARCH')">🇰🇷 네이버 증권</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="data-table" style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border-subtle); text-align: left; font-size: 0.8rem; color: var(--text-muted);">
+                <th style="padding: 0.75rem 0.6rem;">발행일자</th>
+                <th style="padding: 0.75rem 0.6rem;">구분 / 증권사</th>
+                <th style="padding: 0.75rem 0.6rem;">리포트 제목</th>
+                <th style="padding: 0.75rem 0.6rem;">투자의견</th>
+                <th style="padding: 0.75rem 0.6rem; text-align: right;">목표주가</th>
+                <th style="padding: 0.75rem 0.6rem; text-align: right;">상승여력(괴리율)</th>
+                <th style="padding: 0.75rem 0.6rem; text-align: center;">원문 열람</th>
+              </tr>
+            </thead>
+            <tbody id="analyst-reports-tbody">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 3rem;">리포트 데이터를 불러오는 중...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- 6. CONSOLE TAB -->
     <section id="tab-console" class="tab-content">
       <div class="section-header">
@@ -1375,7 +1598,26 @@
     </div>
   </div>
 
-  <script src="/js/app.js"></script>
+  <!-- PDF Viewer Modal -->
+  <div class="modal-overlay" id="pdf-viewer-modal" onclick="closeModalOnOverlay(event, 'pdf-viewer-modal')">
+    <div class="modal-container" style="max-width: 1100px; width: 92vw; height: 88vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+      <div style="padding: 0.9rem 1.4rem; background: var(--bg-card); border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="font-size: 1.1rem;">📄</span>
+          <h3 id="pdf-modal-title" style="font-size: 1.05rem; color: #fff; margin: 0;">애널리스트 리포트 원문 열람</h3>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center;">
+          <a id="pdf-modal-download-btn" href="#" target="_blank" class="btn" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;">💾 새 창에서 열기</a>
+          <button class="modal-close" style="position: static;" onclick="closeModal('pdf-viewer-modal')">✕</button>
+        </div>
+      </div>
+      <div style="flex: 1; position: relative; background: #262626;">
+        <iframe id="pdf-modal-frame" style="width: 100%; height: 100%; border: none;"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js?v=20260921_5"></script>
 </body>
 </html>
 

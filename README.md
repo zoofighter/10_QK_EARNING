@@ -83,14 +83,11 @@
 
 ### 1. 가상환경 설정 및 패키지 설치
 ```bash
-# 가상환경 생성 (최초 1회)
-python3 -m venv .venv
+# 다른 컴퓨터(Dropbox) 동기화 후 최초 1회 자동 셋업:
+./setup_env.sh
 
 # 가상환경 활성화 (macOS/Linux)
 source .venv/bin/activate
-
-# 필수 패키지 설치
-pip install -r requirements.txt
 ```
 
 ### 2. 데이터베이스 초기화 및 시드 데이터 적재
