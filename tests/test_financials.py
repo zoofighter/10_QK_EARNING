@@ -100,6 +100,10 @@ class TestFinancialsAndSectionExtractor(unittest.TestCase):
         q2_metric = next(s for s in aapl["series"] if s["period"] == "2026-Q2")
         self.assertGreater(q1_metric["revenue"], q2_metric["revenue"])
 
+        # Ensure past reported quarters are not marked as estimates
+        self.assertFalse(aapl["series"][0]["is_estimate"], "AAPL 2026-Q3 should be confirmed actuals, not estimate")
+        self.assertIsNotNone(aapl["series"][0]["filing_id"], "AAPL 2026-Q3 should have a linked filing")
+
         # 2. MSFT Check: 28 continuous quarters from 2020-Q1 to 2026-Q4
         msft = service.get_quarterly_financials("MSFT")
         self.assertEqual(msft["status"], "success")
@@ -109,6 +113,7 @@ class TestFinancialsAndSectionExtractor(unittest.TestCase):
         self.assertEqual(msft_periods[1], "2026-Q3")
         self.assertEqual(msft_periods[2], "2026-Q2")
         self.assertEqual(msft_periods[3], "2026-Q1")
+        self.assertFalse(msft["series"][0]["is_estimate"], "MSFT 2026-Q4 should be confirmed actuals, not estimate")
 
         # 3. GOOGL Check: 26 continuous quarters from 2020-Q1 to 2026-Q2
         googl = service.get_quarterly_financials("GOOGL")
@@ -118,8 +123,21 @@ class TestFinancialsAndSectionExtractor(unittest.TestCase):
         self.assertEqual(googl_periods[0], "2026-Q2")
         self.assertEqual(googl_periods[1], "2026-Q1")
         self.assertEqual(googl_periods[2], "2025-Q4")
-        self.assertEqual(googl_periods[3], "2025-Q3")
-
+        self.assertFalse(googl["series"][0]["is_estimate"], "GOOGL 2026-Q2 should be confirmed actuals, not estimate")
+        # 4. MU (Micron) Check: 28 continuous quarters, correct FY25/FY26 growth
+        mu = service.get_quarterly_financials("MU")
+        self.assertEqual(mu["status"], "success")
+        self.assertGreaterEqual(mu["count"], 28)
+        mu_periods = {s["period"]: s for s in mu["series"]}
+        self.assertIn("2026-Q4", mu_periods)
+        self.assertIn("2026-Q3", mu_periods)
+        self.assertIn("2025-Q1", mu_periods)
+        self.assertIn("2024-Q1", mu_periods)
+        # Ensure FY25-Q1 is not a duplicate copy of FY24-Q1
+        self.assertNotEqual(mu_periods["2025-Q1"]["revenue"], mu_periods["2024-Q1"]["revenue"])
+        self.assertEqual(mu_periods["2026-Q4"]["revenue"], 54229.0)
+        self.assertEqual(mu_periods["2026-Q4"]["operating_income"], 43751.0)
+        self.assertGreater(mu_periods["2026-Q4"]["segment_datacenter"], 40000.0)
 
 
 if __name__ == "__main__":

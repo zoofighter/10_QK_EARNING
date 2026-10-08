@@ -14,6 +14,16 @@ GLOBAL_REPORTS_DIR = REPORTS_DIR / "global"
 SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "QKEarningResearchApp researcher@qkearning.io")
 SEC_RATE_LIMIT_DELAY = 0.2  # seconds between requests to guarantee < 10 req/sec
 
+# Korea Customs Service (관세청) Open API
+CUSTOMS_API_KEY = os.environ.get(
+    "CUSTOMS_API_KEY",
+    "3fa055dbb8ba9d142fdc07528a42b372741932fc8f7bc9fed33b8be8bdb7a55a"
+)
+CUSTOMS_API_URL = os.environ.get(
+    "CUSTOMS_API_URL",
+    "http://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList"
+)
+
 # App Settings
 PORT = int(os.environ.get("PORT", 5001))
 DEBUG = os.environ.get("DEBUG", "True").lower() == "true"

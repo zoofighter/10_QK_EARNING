@@ -66,6 +66,9 @@ function switchTab(tabId) {
     }
     loadAnalystReports();
   }
+  if (tabId === "tab-console") {
+    loadConsoleSchedulerStatus();
+  }
 }
 
 // 1. Overview Loader
@@ -780,13 +783,14 @@ async function loadKrExportData() {
     const json = await res.json();
     const data = json.data || [];
 
-    // Render table
+    // Render table (Latest date first)
     const tbody = document.getElementById("kr-export-tbody");
     if (tbody) {
       if (data.length === 0) {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">입력된 데이터가 없습니다. 오른쪽 폼에서 순별 수출 데이터를 입력하세요.</td></tr>`;
       } else {
-        tbody.innerHTML = data.map(r => {
+        const tableData = [...data].sort((a, b) => b.date.localeCompare(a.date));
+        tbody.innerHTML = tableData.map(r => {
           const val = indType.includes("YOY") ? `${r.value.toFixed(1)}%` : `${Number(r.value).toLocaleString()}`;
           return `
             <tr>
@@ -829,8 +833,29 @@ function renderKrExportChart(data, indType) {
 
   const labels = data.map(d => d.date);
   const values = data.map(d => d.value);
-  const label = indType === "KR_TOTAL_EXPORT_AMT" ? "전체 수출액 (M USD)" : "반도체 수출액 (M USD)";
-  const color = indType === "KR_TOTAL_EXPORT_AMT" ? "#3B82F6" : "#F59E0B";
+
+  const labelMap = {
+    "KR_TOTAL_EXPORT_AMT": "전체 수출액 (순별, M USD)",
+    "KR_SEMI_EXPORT_AMT": "반도체 수출액 (순별 잠정치, M USD)",
+    "KR_SEMI_EXPORT_YOY": "반도체 수출 YoY (순별, %)",
+    "KR_SEMI_EXPORT_MONTHLY_AMT": "관세청 반도체 수출액 (월별 확정치, M USD)",
+    "KR_SEMI_EXPORT_MONTHLY_YOY": "관세청 반도체 수출 YoY (월별, %)",
+    "KR_SEMI_MEMORY_EXPORT_AMT": "메모리 반도체 수출액 (HS 854232, M USD)",
+    "KR_SEMI_SYSTEM_EXPORT_AMT": "시스템 반도체 수출액 (HS 854231, M USD)",
+  };
+  const colorMap = {
+    "KR_TOTAL_EXPORT_AMT": "#3B82F6",
+    "KR_SEMI_EXPORT_AMT": "#F59E0B",
+    "KR_SEMI_EXPORT_YOY": "#10B981",
+    "KR_SEMI_EXPORT_MONTHLY_AMT": "#F59E0B",
+    "KR_SEMI_EXPORT_MONTHLY_YOY": "#10B981",
+    "KR_SEMI_MEMORY_EXPORT_AMT": "#8B5CF6",
+    "KR_SEMI_SYSTEM_EXPORT_AMT": "#06B6D4",
+  };
+
+  const label = labelMap[indType] || "수출액 (M USD)";
+  const color = colorMap[indType] || "#F59E0B";
+  const isYoy = indType.includes("YOY");
 
   krExportChart = new Chart(ctx, {
     type: "line",
@@ -856,7 +881,9 @@ function renderKrExportChart(data, indType) {
         legend: { display: true, labels: { color: "#9CA3AF", font: { size: 11 } } },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${Number(ctx.parsed.y).toLocaleString()} M USD`
+            label: (ctx) => isYoy
+              ? `YoY: ${ctx.parsed.y > 0 ? '+' : ''}${ctx.parsed.y.toFixed(1)}%`
+              : `${Number(ctx.parsed.y).toLocaleString()} M USD`
           }
         }
       },
@@ -988,15 +1015,113 @@ document.addEventListener("change", (e) => {
   }
 });
 
-// ─── Combined 10-Day KR Export Chart (Amt + YoY) ───
+// ─── Combined KR Export Chart (Amt + YoY) ───
+let krExportViewMode = "10day"; // "10day" or "monthly"
+
+function switchKrExportChartView(mode) {
+  krExportViewMode = mode;
+  const btn10 = document.getElementById("btn-kr-view-10day");
+  const btnMon = document.getElementById("btn-kr-view-monthly");
+  const titleEl = document.getElementById("kr-chart-title");
+
+  if (btn10) btn10.classList.toggle("active", mode === "10day");
+  if (btnMon) btnMon.classList.toggle("active", mode === "monthly");
+
+  if (titleEl) {
+    titleEl.innerHTML = mode === "monthly"
+      ? `<span>📊</span> 관세청 공식 월별 반도체 수출액 & YoY 복합 추이`
+      : `<span>📊</span> 반도체 수출액 & YoY 증감률 복합 추이 (순별)`;
+  }
+
+  const filter = document.getElementById("kr-ind-type-filter");
+  if (filter) {
+    filter.value = mode === "monthly" ? "KR_SEMI_EXPORT_MONTHLY_AMT" : "KR_SEMI_EXPORT_AMT";
+  }
+
+  loadKrExportCombinedChart();
+  loadKrExportData();
+}
+
+async function syncKrExportFromApi() {
+  const btn = document.getElementById("btn-sync-kr-customs");
+  const originalText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span>⏳</span> 동기화 중...`;
+  }
+
+  try {
+    const res = await fetch("/api/indicators/kr-export/fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      alert(`[관세청 Open API 동기화 완료]\n${data.message || '데이터가 갱신되었습니다.'}\n반영 연도: ${(data.years || []).join(', ')}`);
+      switchKrExportChartView("monthly");
+    } else {
+      alert(`관세청 API 동기화 실패: ${data.message || '오류가 발생했습니다.'}`);
+    }
+  } catch (err) {
+    console.error("Customs API sync error:", err);
+    alert(`동기화 중 오류가 발생했습니다: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalText || `<span>🌐</span> 관세청 월별 API 동기화`;
+    }
+  }
+}
+
+async function syncKrExport10DayFromApi() {
+  const btn = document.getElementById("btn-sync-kr-10day");
+  const originalText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span>⏳</span> 조회 중...`;
+  }
+
+  try {
+    const res = await fetch("/api/indicators/kr-export/fetch-10day", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      alert(`[10일 단위 잠정치 동기화 완료]\n${data.message}`);
+      switchKrExportChartView("10day");
+    } else if (data.status === "not_registered") {
+      if (confirm(`[공공데이터포털 추가 활용신청 필요]\n\n${data.message}\n\n'확인'을 누르시면 공공데이터포털 신청 페이지로 이동합니다. (신청 후 즉시 이용 가능)`)) {
+        window.open(data.apply_url, "_blank");
+      }
+    } else {
+      alert(`10일 잠정치 API 조회 오류: ${data.message || '오류가 발생했습니다.'}`);
+    }
+  } catch (err) {
+    console.error("10-day customs API sync error:", err);
+    alert(`조회 중 오류가 발생했습니다: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalText || `<span>⚡</span> 10일 잠정치 API 동기화`;
+    }
+  }
+}
+
 async function loadKrExportCombinedChart() {
   const ctx = document.getElementById("kr-export-chart");
   if (!ctx) return;
 
+  const isMonthly = krExportViewMode === "monthly";
+  const amtType = isMonthly ? "KR_SEMI_EXPORT_MONTHLY_AMT" : "KR_SEMI_EXPORT_AMT";
+  const yoyType = isMonthly ? "KR_SEMI_EXPORT_MONTHLY_YOY" : "KR_SEMI_EXPORT_YOY";
+
   try {
     const [amtRes, yoyRes] = await Promise.all([
-      fetch("/api/indicators/kr-export?type=KR_SEMI_EXPORT_AMT&limit=15"),
-      fetch("/api/indicators/kr-export?type=KR_SEMI_EXPORT_YOY&limit=15")
+      fetch(`/api/indicators/kr-export?type=${amtType}&limit=24`),
+      fetch(`/api/indicators/kr-export?type=${yoyType}&limit=24`)
     ]);
     const amtJson = await amtRes.json();
     const yoyJson = await yoyRes.json();
@@ -1016,13 +1141,15 @@ async function loadKrExportCombinedChart() {
     yoyData.forEach(d => { yoyMap[d.date] = d.value; });
     const yoyValues = labels.map(date => yoyMap[date] !== undefined ? yoyMap[date] : null);
 
+    const barLabel = isMonthly ? "관세청 공식 반도체 수출액 (M USD)" : "반도체 수출액 (순별, M USD)";
+
     krExportChart = new Chart(ctx, {
       data: {
         labels,
         datasets: [
           {
             type: "bar",
-            label: "반도체 수출액 (M USD)",
+            label: barLabel,
             data: amounts,
             backgroundColor: "rgba(245, 158, 11, 0.4)",
             borderColor: "#F59E0B",
@@ -1344,7 +1471,7 @@ let currentSpotType = "SPOT_DRAM_DDR5_16GB";
 
 async function loadMemorySpotData() {
   try {
-    const res = await fetch(`/api/indicators/memory-spot?type=${currentSpotType}&limit=30`);
+    const res = await fetch(`/api/indicators/memory-spot?type=${currentSpotType}&limit=30&_t=${Date.now()}`);
     const json = await res.json();
     if (json.status !== "success") return;
 
@@ -1364,9 +1491,20 @@ function renderMemorySpotSummary(summary) {
   const ddr4Mod = summary["SPOT_DRAM_DDR4_16GB"];
   const dxi = summary["INDEX_DXI"];
 
-  const updateCard = (valId, subId, item, isPoint = false, isDaily = false) => {
+  // Dynamically update the header timestamp based on the latest date in summary
+  const allDates = Object.values(summary).map(s => s && s.latest_date).filter(Boolean);
+  if (allDates.length > 0) {
+    const latestDate = allDates.sort().reverse()[0];
+    const updateEl = document.getElementById("spot-last-updated-text");
+    if (updateEl) {
+      updateEl.textContent = `최종 업데이트: ${latestDate} (MemoryIndex / DRAMeXchange 실시간)`;
+    }
+  }
+
+  const updateCard = (valId, subId, noteId, item, isPoint = false, isDaily = false, defaultNote = "") => {
     const valEl = document.getElementById(valId);
     const subEl = document.getElementById(subId);
+    const noteEl = noteId ? document.getElementById(noteId) : null;
     if (!valEl || !subEl || !item) return;
 
     if (item.latest_price !== null && item.latest_price !== undefined) {
@@ -1376,6 +1514,10 @@ function renderMemorySpotSummary(summary) {
       const term = isDaily ? "(세션 변동)" : "(전주 대비)";
       subEl.textContent = `${sign}${item.change_pct}% ${term}`;
       subEl.style.color = color;
+      if (noteEl) {
+        const dateTag = item.latest_date ? ` [${item.latest_date}]` : "";
+        noteEl.textContent = `${defaultNote}${dateTag}`;
+      }
     } else {
       valEl.textContent = "-";
       subEl.textContent = "데이터 없음";
@@ -1383,11 +1525,11 @@ function renderMemorySpotSummary(summary) {
     }
   };
 
-  updateCard("val-spot-ddr5", "sub-spot-ddr5", ddr5, false, true);
-  updateCard("val-spot-ddr5-chip", "sub-spot-ddr5-chip", ddr5Chip, false, true);
-  updateCard("val-spot-ddr4", "sub-spot-ddr4", ddr4, false, true);
-  updateCard("val-spot-ddr4-mod", "sub-spot-ddr4-mod", ddr4Mod, false, true);
-  updateCard("val-spot-dxi", "sub-spot-dxi", dxi, true, false);
+  updateCard("val-spot-ddr5", "sub-spot-ddr5", "note-spot-ddr5", ddr5, false, true, "일일 $40.80 ~ $67.00");
+  updateCard("val-spot-ddr5-chip", "sub-spot-ddr5-chip", "note-spot-ddr5-chip", ddr5Chip, false, true, "일일 $23.50 ~ $25.60");
+  updateCard("val-spot-ddr4", "sub-spot-ddr4", "note-spot-ddr4", ddr4, false, true, "일일 $12.80 ~ $14.20");
+  updateCard("val-spot-ddr4-mod", "sub-spot-ddr4-mod", "note-spot-ddr4-mod", ddr4Mod, false, true, "일일 $45.00 ~ $120.00");
+  updateCard("val-spot-dxi", "sub-spot-dxi", "note-spot-dxi", dxi, true, false, "DRAM 종합 업황 지수");
 }
 
 function switchSpotChart(type) {
@@ -1505,13 +1647,28 @@ async function seedMemorySpotData() {
 }
 
 async function fetchMemorySpotApi() {
+  const btn = document.getElementById("btn-fetch-memory-spot");
+  const origText = btn ? btn.innerHTML : "🌐 API 시세 동기화";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "🔄 동기화 중...";
+  }
   try {
     const res = await fetch("/api/indicators/memory-spot/fetch", { method: "POST" });
     const json = await res.json();
-    alert(`동기화 결과: ${json.message || `완료 (${json.imported || 0}건 저장)`}`);
-    loadMemorySpotData();
+    if (json.status === "success") {
+      alert(`✅ 동기화 완료: ${json.message || `${json.imported || 0}건 저장 완료`}`);
+    } else {
+      alert(`⚠️ ${json.message || "동기화 경고"}`);
+    }
+    await loadMemorySpotData();
   } catch (err) {
-    alert(`오류: ${err.message}`);
+    alert(`❌ 동기화 통신 오류: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
   }
 }
 
@@ -1537,7 +1694,8 @@ async function loadQuarterlyFinancials(ticker = "NVDA") {
 
     const countLabel = document.getElementById("quarterly-count-label");
     if (countLabel) {
-      countLabel.textContent = `${currentQuarterlySeries.length}개 분기 수집 완료 (2020~2026)`;
+      const fyGuide = json.fiscal_year_end_guide ? ` | <span style="color:var(--accent-emerald);">📅 ${json.fiscal_year_end_guide}</span>` : '';
+      countLabel.innerHTML = `<span style="color:var(--accent-cyan); font-weight:600;">${currentQuarterlySeries.length}개 분기</span>${fyGuide}`;
     }
 
     renderQuarterlySummary(currentQuarterlySeries, currentQuarterlyEntity);
@@ -1631,7 +1789,10 @@ function renderQuarterlyChart(series, ticker) {
   if (!series || series.length === 0) return;
 
   const chronological = [...series].reverse();
-  const labels = chronological.map(d => d.period || d.period_key || `${d.fiscal_year}-${d.fiscal_quarter}`);
+  const labels = chronological.map(d => {
+    const base = d.period || d.period_key || `${d.fiscal_year}-${d.fiscal_quarter}`;
+    return d.operating_period ? `${base} [${d.operating_period.split('.')[1] || d.operating_period}]` : base;
+  });
   const revValues = chronological.map(d => d.revenue);
   const opValues = chronological.map(d => d.operating_income);
   const opmValues = chronological.map(d => d.op_margin_pct);
@@ -1737,7 +1898,10 @@ function renderCapexChart(series, ticker) {
   if (!series || series.length === 0) return;
 
   const chronological = [...series].reverse();
-  const labels = chronological.map(d => d.period || d.period_key || `${d.fiscal_year}-${d.fiscal_quarter}`);
+  const labels = chronological.map(d => {
+    const base = d.period || d.period_key || `${d.fiscal_year}-${d.fiscal_quarter}`;
+    return d.operating_period ? `${base} [${d.operating_period.split('.')[1] || d.operating_period}]` : base;
+  });
   const capexValues = chronological.map(d => d.capex);
   const dcValues = chronological.map(d => d.revenue_datacenter);
 
@@ -1847,9 +2011,16 @@ function renderQuarterlyTable(series) {
       ? `<span class="filing-badge" style="background: rgba(56, 189, 248, 0.12); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.3); font-size: 0.73rem; padding: 0.2rem 0.45rem;">${row.fx_rate_label || row.original_currency}</span>`
       : `<span style="color: var(--text-muted); font-size: 0.75rem;">1.0 (USD)</span>`;
 
+    const opPeriod = row.operating_period
+      ? `<div style="font-size:0.72rem; color:var(--accent-cyan); font-weight:normal; margin-top:0.15rem;">[${row.operating_period}]</div>`
+      : "";
+    const estBadge = row.is_estimate
+      ? `<span class="layer-tag L4" style="font-size:0.65rem; padding:0.1rem 0.35rem; margin-left:0.3rem;">추정(E)</span>`
+      : "";
+
     return `
       <tr onclick="selectQuarterRow(${idx})" style="cursor: pointer;" id="quarter-row-${idx}">
-        <td><strong>${periodLabel}</strong></td>
+        <td><strong>${periodLabel}</strong>${estBadge}${opPeriod}</td>
         <td><span class="filing-badge filing-${row.filing_type || '10-Q'}">${row.filing_type || '10-Q'}</span></td>
         <td style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">${row.report_date || row.filed_date || '-'}</td>
         <td style="text-align: right; font-weight: 600;">$${(row.revenue / 1000).toFixed(1)}B ${yoyBadge}${origRevNote}</td>
@@ -2967,6 +3138,25 @@ async function seedGpuRentalData() {
   }
 }
 
+async function syncLatestGpuRentalData() {
+  try {
+    const res = await fetch("/api/gpu/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+    const json = await res.json();
+    if (json.status === "success") {
+      alert(`⚡ 최신 GPU 스팟 시세(${json.sync_date} 기준, ${json.count}개 모델)가 성공적으로 동기화되었습니다!`);
+      loadGpuRentalData();
+    } else {
+      alert(`동기화 실패: ${json.message || "오류가 발생했습니다."}`);
+    }
+  } catch (err) {
+    alert(`동기화 오류: ${err.message}`);
+  }
+}
+
+
 // ==============================================================================
 // 11. Analyst Reports & Target Price Tracking Dashboard Logic
 // ==============================================================================
@@ -3659,6 +3849,120 @@ async function toggleSchedulerModal() {
     alert(`스케줄러 상태 조회 오류: ${e.message}`);
   }
 }
+
+// ──────────────────────────────────────────────
+// Console Tab Automated Scheduler Controls
+// ──────────────────────────────────────────────
+async function loadConsoleSchedulerStatus() {
+  const badgeEl = document.getElementById("console-scheduler-status-badge");
+  const clockEl = document.getElementById("console-scheduler-clock");
+  const toggleBtn = document.getElementById("console-scheduler-toggle-btn");
+  const tbody = document.getElementById("console-schedules-tbody");
+
+  try {
+    const res = await fetch("/api/scheduler/status");
+    const json = await res.json();
+    if (json.status !== "success") return;
+
+    const d = json.data || {};
+    const isRunning = d.is_running;
+
+    // 1. Badge & Clock
+    if (badgeEl) {
+      if (isRunning) {
+        badgeEl.textContent = "🟢 자동 가동 중 (ACTIVE)";
+        badgeEl.style.background = "rgba(16, 185, 129, 0.2)";
+        badgeEl.style.color = "#10B981";
+        badgeEl.style.borderColor = "rgba(16, 185, 129, 0.4)";
+      } else {
+        badgeEl.textContent = "🔴 일시 정지 (STOPPED)";
+        badgeEl.style.background = "rgba(239, 68, 68, 0.2)";
+        badgeEl.style.color = "#EF4444";
+        badgeEl.style.borderColor = "rgba(239, 68, 68, 0.4)";
+      }
+    }
+
+    if (clockEl) {
+      clockEl.textContent = `현재 KST: ${d.current_time_kst || new Date().toLocaleTimeString()}`;
+    }
+
+    if (toggleBtn) {
+      toggleBtn.textContent = isRunning ? "⏸ 일시정지" : "▶ 가동 시작";
+      toggleBtn.style.color = isRunning ? "var(--text-secondary)" : "var(--accent-emerald)";
+    }
+
+    // 2. Schedule Table
+    if (tbody && d.schedules) {
+      tbody.innerHTML = d.schedules.map(s => {
+        let jobKey = "ALL";
+        if (s.id === "price_sync") jobKey = "PRICE";
+        else if (s.id === "kr_morning") jobKey = "KR_MORNING";
+        else if (s.id === "gpu_sync") jobKey = "GPU";
+        else if (s.id === "customs_10day") jobKey = "CUSTOMS";
+        else if (s.id === "edgar_filings") jobKey = "EDGAR";
+        else if (s.id === "us_evening") jobKey = "US_EVENING";
+
+        return `
+          <tr style="border-bottom: 1px solid var(--border-subtle);">
+            <td style="padding: 0.55rem 0.8rem; font-weight: 600; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace; white-space: nowrap;">
+              ${s.time}
+            </td>
+            <td style="padding: 0.55rem 0.8rem; color: #fff;">
+              ${s.name}
+              <div style="font-size: 0.7rem; color: var(--text-muted);">다음 실행: ${s.next_run}</div>
+            </td>
+            <td style="padding: 0.55rem 0.8rem; color: var(--text-muted); font-size: 0.72rem; white-space: nowrap;">
+              ${s.last_run}
+            </td>
+            <td style="padding: 0.55rem 0.8rem; text-align: right; white-space: nowrap;">
+              <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.72rem;" onclick="runConsoleSchedulerNow('${jobKey}')">▶ 즉시 실행</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+  } catch (err) {
+    console.error("Error loading scheduler status in console:", err);
+  }
+}
+
+async function toggleSchedulerFromConsole() {
+  try {
+    const res = await fetch("/api/scheduler/toggle", { method: "POST" });
+    const json = await res.json();
+    if (json.status === "success") {
+      const running = json.data.is_running;
+      appendLog(`[SCHEDULER] 스케줄러 상태 변경: ${running ? '가동 시작됨 (ACTIVE)' : '일시 정지됨 (STOPPED)'}`);
+      loadConsoleSchedulerStatus();
+    }
+  } catch (err) {
+    appendLog(`[SCHEDULER_ERR] 토글 실패: ${err.message}`);
+  }
+}
+
+async function runConsoleSchedulerNow(jobType = "ALL") {
+  appendLog(`[REQ] 자동 수집 파이프라인 즉시 강제 실행 요청 (Job: ${jobType})...`);
+  try {
+    const res = await fetch("/api/scheduler/run-now", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_type: jobType })
+    });
+    const json = await res.json();
+    if (json.status === "success") {
+      appendLog(`[OK] 자동 수집 작업 완료! 세부 내역: ${JSON.stringify(json.data)}`);
+      loadConsoleSchedulerStatus();
+      loadOverview();
+      loadEntities();
+    } else {
+      appendLog(`[ERR] 자동 수집 실패: ${json.message}`);
+    }
+  } catch (err) {
+    appendLog(`[FAIL] 통신 오류: ${err.message}`);
+  }
+}
+
 
 
 

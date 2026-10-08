@@ -263,6 +263,18 @@ class ConsensusService:
             # GOOGL
             {"ticker": "GOOGL", "year": "2026", "quarter": "Q2", "metric": "revenue", "consensus": 89000, "actual": 90500, "date": "2026-07-23"},
             {"ticker": "GOOGL", "year": "2026", "quarter": "Q2", "metric": "eps", "consensus": 1.95, "actual": 2.05, "date": "2026-07-23"},
+
+            # MU (Micron Technology - Memory & Storage)
+            {"ticker": "MU", "year": "2026", "quarter": "Q4", "metric": "revenue", "consensus": 53200, "actual": 54229, "date": "2026-09-30"},
+            {"ticker": "MU", "year": "2026", "quarter": "Q4", "metric": "eps", "consensus": 31.80, "actual": 33.42, "date": "2026-09-30"},
+            {"ticker": "MU", "year": "2026", "quarter": "Q3", "metric": "revenue", "consensus": 40100, "actual": 41456, "date": "2026-06-24"},
+            {"ticker": "MU", "year": "2026", "quarter": "Q3", "metric": "eps", "consensus": 23.50, "actual": 25.11, "date": "2026-06-24"},
+            {"ticker": "MU", "year": "2026", "quarter": "Q2", "metric": "revenue", "consensus": 22900, "actual": 23860, "date": "2026-03-18"},
+            {"ticker": "MU", "year": "2026", "quarter": "Q2", "metric": "eps", "consensus": 11.20, "actual": 12.20, "date": "2026-03-18"},
+            {"ticker": "MU", "year": "2026", "quarter": "Q1", "metric": "revenue", "consensus": 12800, "actual": 13643, "date": "2025-12-17"},
+            {"ticker": "MU", "year": "2026", "quarter": "Q1", "metric": "eps", "consensus": 4.25, "actual": 4.78, "date": "2025-12-17"},
+            {"ticker": "MU", "year": "2025", "quarter": "Q4", "metric": "revenue", "consensus": 11100, "actual": 11315, "date": "2025-09-23"},
+            {"ticker": "MU", "year": "2025", "quarter": "Q4", "metric": "eps", "consensus": 2.85, "actual": 3.03, "date": "2025-09-23"},
         ]
 
         count = 0

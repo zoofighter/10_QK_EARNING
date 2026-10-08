@@ -196,7 +196,25 @@ class EdgarCollector:
                 year = int(date_str[:4]) if len(date_str) >= 4 else None
                 month = int(date_str[5:7]) if len(date_str) >= 7 else 1
 
-                if fy_end == "01":
+                if fy_end == "08":
+                    # For entities with August fiscal year end (e.g. MU - Micron):
+                    # Nov-Dec: Q1 (FY = year + 1)
+                    # Feb-Mar: Q2 (FY = year)
+                    # May-Jun: Q3 (FY = year)
+                    # Aug-Sep / FY: Q4 or FY (FY = year)
+                    if month in [11, 12]:
+                        quarter = "Q1"
+                        fiscal_year = str(year + 1) if year else ""
+                    elif month in [1, 2, 3]:
+                        quarter = "Q2"
+                        fiscal_year = str(year) if year else ""
+                    elif month in [4, 5, 6]:
+                        quarter = "Q3"
+                        fiscal_year = str(year) if year else ""
+                    else: # month in [7, 8, 9, 10]
+                        quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
+                        fiscal_year = str(year) if year else ""
+                elif fy_end == "01":
                     # For entities with January fiscal year end (e.g. NVDA):
                     # Feb-Apr: Q1, May-Jul: Q2, Aug-Oct: Q3, Nov-Jan: Q4 / FY
                     if month in [2, 3, 4]:
@@ -211,6 +229,52 @@ class EdgarCollector:
                     else: # month in [11, 12, 1]
                         quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
                         fiscal_year = str(year - 1 if month == 1 else year)
+                elif fy_end == "06":
+                    # For entities with June fiscal year end (e.g. MSFT, LRCX, KLAC, WDC):
+                    if month in [10, 11, 12]:
+                        quarter = "Q2"
+                        fiscal_year = str(year + 1) if year else ""
+                    elif month in [7, 8, 9]:
+                        quarter = "FY" if form in ["10-K", "20-F"] else "Q1"
+                        fiscal_year = str(year) if form in ["10-K", "20-F"] else (str(year + 1) if year else "")
+                    elif month in [1, 2, 3]:
+                        quarter = "Q3"
+                        fiscal_year = str(year) if year else ""
+                    else:
+                        quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
+                        fiscal_year = str(year) if year else ""
+                elif fy_end == "09":
+                    # For entities with September fiscal year end (e.g. AAPL):
+                    # Dec (12): Q1 (FY = year + 1)
+                    # Mar (3): Q2 (FY = year)
+                    # Jun (6): Q3 (FY = year)
+                    # Sep (9) / FY: Q4 (FY = year)
+                    if month in [11, 12]:
+                        quarter = "Q1"
+                        fiscal_year = str(year + 1) if year else ""
+                    elif month in [1, 2, 3]:
+                        quarter = "Q2"
+                        fiscal_year = str(year) if year else ""
+                    elif month in [4, 5, 6]:
+                        quarter = "Q3"
+                        fiscal_year = str(year) if year else ""
+                    else:
+                        quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
+                        fiscal_year = str(year) if year else ""
+                elif fy_end == "10":
+                    # For entities with October fiscal year end (e.g. AVGO, AMAT):
+                    if month in [11, 12, 1]:
+                        quarter = "Q1"
+                        fiscal_year = str(year + 1 if month in [11, 12] else year) if year else ""
+                    elif month in [2, 3, 4]:
+                        quarter = "Q2"
+                        fiscal_year = str(year) if year else ""
+                    elif month in [5, 6, 7]:
+                        quarter = "Q3"
+                        fiscal_year = str(year) if year else ""
+                    else:
+                        quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
+                        fiscal_year = str(year) if year else ""
                 else:
                     fiscal_year = str(year) if year else ""
                     quarter = "FY" if form in ["10-K", "20-F"] else f"Q{(month - 1) // 3 + 1}"

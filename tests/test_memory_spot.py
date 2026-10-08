@@ -13,8 +13,9 @@ class TestMemorySpotCollector(unittest.TestCase):
         self.assertEqual(res["status"], "success")
 
         history = collector.get_spot_history("SPOT_DRAM_DDR5_16GB", limit=50)
-        self.assertGreater(len(history), 0)
-        self.assertEqual(history[-1]["value"], 56.00)
+        entry_map = {h["date"]: h["value"] for h in history}
+        self.assertIn("2026-09-18", entry_map)
+        self.assertEqual(entry_map["2026-09-18"], 56.00)
 
     def test_seed_and_summary(self):
         collector = MemorySpotCollector()
@@ -30,6 +31,16 @@ class TestMemorySpotCollector(unittest.TestCase):
         ddr5 = summary["SPOT_DRAM_DDR5_16GB"]
         self.assertIsNotNone(ddr5["latest_price"])
         self.assertGreater(ddr5["latest_price"], 0)
+
+    def test_fetch_public_api(self):
+        collector = MemorySpotCollector()
+        res = collector.fetch_public_api()
+        self.assertIn("status", res)
+        # Should be either success or graceful warning, never raise unhandled exception
+        self.assertIn(res["status"], ["success", "warning"])
+        if res["status"] == "success":
+            self.assertGreaterEqual(res.get("imported", 0), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

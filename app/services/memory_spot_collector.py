@@ -170,23 +170,66 @@ class MemorySpotCollector:
         try:
             resp = requests.get(url, timeout=5)
             if resp.status_code == 200:
-                items = resp.json()
-                today_str = date.today().strftime("%Y-%m-%d")
+                data = resp.json()
+                if isinstance(data, dict):
+                    items = data.get("memory") or data.get("prices") or data.get("data") or []
+                    session_date = data.get("session_utc", "")[:10]
+                elif isinstance(data, list):
+                    items = data
+                    session_date = ""
+                else:
+                    items = []
+                    session_date = ""
+
+                today_str = session_date or date.today().strftime("%Y-%m-%d")
                 saved = 0
+
                 for it in items:
-                    name = it.get("name", "").upper()
-                    price = it.get("price")
-                    if price is not None:
-                        if "DDR5" in name:
-                            self.add_spot_entry("SPOT_DRAM_DDR5_16GB", today_str, price, source="MemoryIndex_API")
-                            saved += 1
-                        elif "DDR4" in name:
-                            self.add_spot_entry("SPOT_DRAM_DDR4_8GB", today_str, price, source="MemoryIndex_API")
-                            saved += 1
-                return {"status": "success", "imported": saved}
-            return {"status": "warning", "message": f"API returned status {resp.status_code}"}
+                    if not isinstance(it, dict):
+                        continue
+                    it_id = str(it.get("id", "")).lower()
+                    name = str(it.get("name", "")).upper()
+                    price = it.get("spot_usd") if it.get("spot_usd") is not None else it.get("price")
+                    if price is None:
+                        continue
+
+                    ind_code = None
+                    if it_id == "ddr5-16g-ett" or ("DDR5" in name and "ETT" in name):
+                        ind_code = "SPOT_DRAM_DDR5_16GB_CHIP"
+                    elif it_id == "ddr5-16g" or ("DDR5" in name and ("16G" in name or "4800" in name or "5600" in name) and "RDIMM" not in name):
+                        ind_code = "SPOT_DRAM_DDR5_16GB"
+                    elif it_id == "ddr4-16g" or ("DDR4" in name and "16G" in name and "3200" in name and "ETT" not in name):
+                        ind_code = "SPOT_DRAM_DDR4_16GB"
+                    elif it_id in ["ddr4-16g-ett", "ddr4-8g-ett"] or ("DDR4" in name and "ETT" in name):
+                        ind_code = "SPOT_DRAM_DDR4_8GB"
+                    elif it_id in ["nand-512g", "nand-tlc"] or ("NAND" in name and "TLC" in name):
+                        ind_code = "SPOT_NAND_TLC_512GB"
+                    elif it_id == "dxi" or "DXI" in name:
+                        ind_code = "INDEX_DXI"
+
+                    if ind_code:
+                        source_label = it.get("source") or "MemoryIndex_API"
+                        note_text = f"{it.get('name', ind_code)} (MemoryIndex API)"
+                        if it.get("chg_24h_pct") is not None:
+                            note_text += f" | 24h: {it.get('chg_24h_pct'):+.2f}%"
+                        self.add_spot_entry(ind_code, today_str, float(price), source=source_label[:40], note=note_text)
+                        saved += 1
+
+                if saved > 0:
+                    return {
+                        "status": "success",
+                        "imported": saved,
+                        "message": f"MemoryIndex API 실시간 시세 {saved}건 동기화 완료 ({today_str})"
+                    }
+                else:
+                    return {
+                        "status": "warning",
+                        "imported": 0,
+                        "message": "수신된 API 데이터에서 지원되는 메모리 현물 호가 항목을 찾지 못했습니다."
+                    }
+            return {"status": "warning", "message": f"외부 API 응답 상태 오류 (HTTP {resp.status_code})"}
         except Exception as e:
-            return {"status": "warning", "message": f"External API connection skipped: {str(e)}"}
+            return {"status": "warning", "message": f"외부 API 통신 오류: {str(e)}"}
 
     def seed_sample_spot_data(self) -> int:
         """

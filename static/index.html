@@ -782,7 +782,7 @@
           <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">DRAM/NAND 메모리 스팟 현물 가격(DRAMeXchange) 및 한국 관세청 10일 단위 반도체 수출 잠정치를 통합 모니터링합니다.</p>
         </div>
         <div style="display: flex; gap: 0.6rem;">
-          <button class="btn" onclick="fetchMemorySpotApi()">🌐 API 시세 동기화</button>
+          <button class="btn" id="btn-fetch-memory-spot" onclick="fetchMemorySpotApi()">🌐 API 시세 동기화</button>
           <button class="btn" onclick="seedMemorySpotData()">🔄 현물가 시드 로드</button>
         </div>
       </div>
@@ -791,7 +791,7 @@
       <div style="margin-bottom: 2rem;">
         <div class="section-header" style="margin-bottom: 0.8rem;">
           <h3 class="section-title" style="font-size: 1.1rem;"><span>💾</span> DRAM & NAND 메모리 반도체 현물 가격 (Spot Price)</h3>
-          <span style="font-size: 0.78rem; color: var(--accent-cyan);">최종 업데이트: 2026년 9월 18일 14:40 (DRAMeXchange / DGI 실시간)</span>
+          <span id="spot-last-updated-text" style="font-size: 0.78rem; color: var(--accent-cyan);">최종 업데이트: 2026년 9월 18일 14:40 (DRAMeXchange / DGI 실시간)</span>
         </div>
 
         <!-- 5 Key Spot Price Cards matching real quotation -->
@@ -800,31 +800,31 @@
             <div class="kpi-label"><span>DDR5 16GB (모듈)</span><span class="layer-tag L3">DRAM</span></div>
             <div class="kpi-value" id="val-spot-ddr5">$56.00</div>
             <div class="kpi-sub" id="sub-spot-ddr5" style="color: var(--accent-emerald);">▲ +1.39% (세션 변동)</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $40.80 ~ $67.00</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;" id="note-spot-ddr5">일일 $40.80 ~ $67.00</div>
           </div>
           <div class="kpi-card" id="card-spot-ddr5-chip" onclick="switchSpotChart('SPOT_DRAM_DDR5_16GB_CHIP')" style="cursor: pointer;">
             <div class="kpi-label"><span>DDR5 16Gb (칩/eTT)</span><span class="layer-tag L3">DRAM</span></div>
             <div class="kpi-value" id="val-spot-ddr5-chip">$24.60</div>
             <div class="kpi-sub" id="sub-spot-ddr5-chip" style="color: var(--accent-emerald);">▲ +0.41% (세션 변동)</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $23.50 ~ $25.60</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;" id="note-spot-ddr5-chip">일일 $23.50 ~ $25.60</div>
           </div>
           <div class="kpi-card" id="card-spot-ddr4" onclick="switchSpotChart('SPOT_DRAM_DDR4_8GB')" style="cursor: pointer;">
             <div class="kpi-label"><span>DDR4 16Gb (칩/eTT)</span><span class="layer-tag L3">DRAM</span></div>
             <div class="kpi-value" id="val-spot-ddr4">$13.23</div>
             <div class="kpi-sub" id="sub-spot-ddr4" style="color: var(--accent-emerald);">▲ +1.34% (세션 변동)</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $12.80 ~ $14.20</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;" id="note-spot-ddr4">일일 $12.80 ~ $14.20</div>
           </div>
           <div class="kpi-card" id="card-spot-ddr4-mod" onclick="switchSpotChart('SPOT_DRAM_DDR4_16GB')" style="cursor: pointer;">
             <div class="kpi-label"><span>DDR4 16GB (모듈)</span><span class="layer-tag L3">DRAM</span></div>
             <div class="kpi-value" id="val-spot-ddr4-mod">$85.75</div>
             <div class="kpi-sub" id="sub-spot-ddr4-mod" style="color: var(--accent-emerald);">▲ +0.29% (세션 변동)</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">일일 $45.00 ~ $120.00</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;" id="note-spot-ddr4-mod">일일 $45.00 ~ $120.00</div>
           </div>
           <div class="kpi-card" id="card-spot-dxi" onclick="switchSpotChart('INDEX_DXI')" style="cursor: pointer;">
             <div class="kpi-label"><span>DXI 종합 지수</span><span class="layer-tag L1">INDEX</span></div>
             <div class="kpi-value" id="val-spot-dxi">39,500</div>
             <div class="kpi-sub" id="sub-spot-dxi" style="color: var(--accent-emerald);">▲ +1.02% (전주 대비)</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">DRAM 종합 업황 지수</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;" id="note-spot-dxi">DRAM 종합 업황 지수</div>
           </div>
         </div>
 
@@ -851,10 +851,21 @@
       </div>
 
       <!-- ─── Part 2: Korea Customs 10-Day Export ─── -->
-      <div class="section-header" style="margin-bottom: 0.8rem; border-top: 1px solid var(--border-subtle); padding-top: 1.5rem;">
+      <div class="section-header" style="margin-bottom: 0.8rem; border-top: 1px solid var(--border-subtle); padding-top: 1.5rem; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem;">
         <div>
-          <h3 class="section-title" style="font-size: 1.1rem;"><span>🇰🇷</span> 한국 관세청 10일 주기(순별) 반도체 수출입 통계</h3>
-          <p style="color: var(--text-muted); font-size: 0.82rem; margin-top: 0.2rem;">관세청 잠정치 (매월 1일/11일/21일) · HS 8542 전자집적회로 기준</p>
+          <h3 class="section-title" style="font-size: 1.1rem;"><span>🇰🇷</span> 한국 관세청 10일 주기(순별) 및 월별 반도체 수출입 통계</h3>
+          <p style="color: var(--text-muted); font-size: 0.82rem; margin-top: 0.2rem;">관세청 공공데이터포털 Open API (HS 8542) 연동 및 순별 잠정치 모니터링</p>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 0.76rem; color: var(--accent-cyan); background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: 4px; padding: 0.35rem 0.65rem;">
+            📡 관세청 공표 최신월: <strong>2026.08</strong> (9월 확정치는 10/15 발표)
+          </span>
+          <button class="btn btn-primary" id="btn-sync-kr-customs" onclick="syncKrExportFromApi()" style="font-size: 0.82rem; padding: 0.4rem 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>🌐</span> 관세청 월별 API 동기화
+          </button>
+          <button class="btn btn-secondary" id="btn-sync-kr-10day" onclick="syncKrExport10DayFromApi()" style="font-size: 0.82rem; padding: 0.4rem 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>⚡</span> 10일 잠정치 API 동기화
+          </button>
         </div>
       </div>
 
@@ -863,8 +874,12 @@
         <div>
           <!-- Chart -->
           <div class="glass-panel" style="margin-bottom: 1.5rem;">
-            <div class="section-header">
-              <h3 class="section-title" style="font-size: 1.05rem;"><span>📊</span> 반도체 수출액 & YoY 증감률 복합 추이 (순별)</h3>
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <h3 class="section-title" id="kr-chart-title" style="font-size: 1.05rem;"><span>📊</span> 반도체 수출액 & YoY 증감률 복합 추이 (순별)</h3>
+              <div style="display: flex; gap: 0.4rem;">
+                <button class="btn btn-sm active" id="btn-kr-view-10day" onclick="switchKrExportChartView('10day')" style="font-size: 0.76rem; padding: 0.25rem 0.6rem;">순별 잠정치</button>
+                <button class="btn btn-sm" id="btn-kr-view-monthly" onclick="switchKrExportChartView('monthly')" style="font-size: 0.76rem; padding: 0.25rem 0.6rem;">관세청 월별(API)</button>
+              </div>
             </div>
             <div style="height: 280px; position: relative;">
               <canvas id="kr-export-chart"></canvas>
@@ -874,11 +889,15 @@
           <!-- Data Table -->
           <div class="glass-panel">
             <div class="section-header">
-              <h3 class="section-title" style="font-size: 1.05rem;"><span>📋</span> 순별 수출 데이터 이력</h3>
+              <h3 class="section-title" style="font-size: 1.05rem;"><span>📋</span> 수출 데이터 이력</h3>
               <select id="kr-ind-type-filter" class="btn" onchange="loadKrExportData()">
-                <option value="KR_SEMI_EXPORT_AMT">반도체 수출액 (M USD)</option>
-                <option value="KR_SEMI_EXPORT_YOY">반도체 수출 YoY (%)</option>
-                <option value="KR_TOTAL_EXPORT_AMT">전체 수출액 (M USD)</option>
+                <option value="KR_SEMI_EXPORT_AMT">반도체 수출액 (순별 잠정치, M USD)</option>
+                <option value="KR_SEMI_EXPORT_YOY">반도체 수출 YoY (순별, %)</option>
+                <option value="KR_TOTAL_EXPORT_AMT">전체 수출액 (순별, M USD)</option>
+                <option value="KR_SEMI_EXPORT_MONTHLY_AMT">관세청 공식 반도체 수출액 (월별 확정치, M USD)</option>
+                <option value="KR_SEMI_EXPORT_MONTHLY_YOY">관세청 공식 반도체 수출 YoY (월별, %)</option>
+                <option value="KR_SEMI_MEMORY_EXPORT_AMT">메모리 반도체 수출액 (HS 854232, M USD)</option>
+                <option value="KR_SEMI_SYSTEM_EXPORT_AMT">시스템 반도체 수출액 (HS 854231, M USD)</option>
               </select>
             </div>
             <div class="table-container">
@@ -968,11 +987,11 @@
           <hr style="border-color: var(--border-subtle); margin: 1.5rem 0;">
 
           <div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.7;">
-            <strong style="color: var(--text-secondary);">📌 데이터 출처 안내</strong><br>
-            • 관세청 보도자료: <em>"수출입 현황 [잠정치]"</em><br>
-            • 발표 주기: 매월 1일 / 11일 / 21일<br>
-            • HS Code 8542: 전자집적회로(반도체)<br>
-            • 조회: <a href="https://tradedata.go.kr" target="_blank" style="color: var(--accent-cyan);">tradedata.go.kr</a>
+            <strong style="color: var(--text-secondary);">📌 관세청 통계 공표 주기 안내</strong><br>
+            • <strong>순별 잠정치 (속보)</strong>: 매월 1일(하순), 11일(상순), 21일(중순) 관세청 보도자료 배포 (위 폼에서 입력)<br>
+            • <strong>월별 확정치 (Open API)</strong>: 익월 15일경 공공데이터포털 API에 확정 공표 (현재 최신: <strong>2026.08</strong>, 9월분은 10/15 반영 예정)<br>
+            • <strong>HS Code 8542</strong>: 전자집적회로(반도체 전체) · 854232(메모리) · 854231(시스템)<br>
+            • 관세청 무역통계 조회: <a href="https://tradedata.go.kr" target="_blank" style="color: var(--accent-cyan);">tradedata.go.kr</a>
           </div>
         </div>
       </div>
@@ -984,8 +1003,9 @@
             <h3 class="section-title" style="font-size: 1.1rem;"><span>⚡</span> AI 가속기 GPU 클라우드 렌탈 스팟 가격 (GPU Cloud Rental Spot Prices)</h3>
             <p style="color: var(--text-muted); font-size: 0.82rem; margin-top: 0.2rem;">H100, H200, B200, A100 가속기의 주요 클라우드 사업자(Lambda, RunPod, CoreWeave 등) 시간당 대여료($/hr) 및 수급 동향</p>
           </div>
-          <div style="display: flex; gap: 0.6rem;">
-            <button class="btn" onclick="seedGpuRentalData()">🔄 GPU 시세 시드 로드</button>
+          <div style="display: flex; gap: 0.6rem; align-items: center;">
+            <button class="btn btn-primary" onclick="syncLatestGpuRentalData()">⚡ 최신 시세 동기화</button>
+            <button class="btn" onclick="seedGpuRentalData()">🔄 시계열 시드 로드</button>
           </div>
         </div>
 
@@ -1298,14 +1318,57 @@
       <div class="section-header">
         <div>
           <h2 class="section-title"><span>⚡</span> 데이터 수집 제어센터</h2>
-          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">SEC EDGAR API 및 Yahoo Finance 주가 데이터를 수동 트리거합니다.</p>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">백그라운드 자동 수집 스케줄러(Daemon Scheduler) 및 수동 즉시 수집 제어</p>
         </div>
       </div>
 
       <div class="dashboard-columns">
-        <!-- Left: Quick Action Buttons -->
+        <!-- Left: Scheduler & Quick Action Buttons -->
         <div class="glass-panel">
-          <h3 style="font-size: 1.05rem; margin-bottom: 1rem; color: #fff;">수집 작업 즉시 실행</h3>
+          
+          <!-- Section 1: Automated Background Scheduler -->
+          <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.25); padding: 1.2rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <span style="font-size: 1.3rem;">🤖</span>
+                <div>
+                  <h3 style="font-size: 1.02rem; font-weight: 700; color: #fff; margin: 0;">정기 자동 수집 스케줄러 (Automated Scheduler)</h3>
+                  <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.2rem;">
+                    <span id="console-scheduler-status-badge" class="status-pill" style="font-size: 0.7rem; background: rgba(16, 185, 129, 0.2); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.4);">🟢 자동 가동 중 (ACTIVE)</span>
+                    <span id="console-scheduler-clock" style="font-size: 0.72rem; color: var(--text-muted);">KST --:--:--</span>
+                  </div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.5rem;">
+                <button id="console-scheduler-toggle-btn" class="btn" style="font-size: 0.78rem;" onclick="toggleSchedulerFromConsole()">⏸ 일시정지</button>
+                <button class="btn btn-primary" style="font-size: 0.78rem;" onclick="runConsoleSchedulerNow('ALL')">⚡ 전체 파이프라인 지금 실행</button>
+              </div>
+            </div>
+            
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">
+              백그라운드 데몬이 아래 정해진 시간에 데이터를 자동 수집하여 데이터베이스를 실시간 최신 상태로 유지합니다.
+            </p>
+
+            <!-- Scheduler Table -->
+            <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow-x: auto;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border-subtle); background: rgba(255, 255, 255, 0.02); text-align: left; color: var(--text-secondary);">
+                    <th style="padding: 0.5rem 0.8rem;">실행 주기</th>
+                    <th style="padding: 0.5rem 0.8rem;">대상 데이터 파이프라인</th>
+                    <th style="padding: 0.5rem 0.8rem;">최근 실행</th>
+                    <th style="padding: 0.5rem 0.8rem; text-align: right;">즉시 실행</th>
+                  </tr>
+                </thead>
+                <tbody id="console-schedules-tbody">
+                  <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1rem;">스케줄러 상태를 확인하는 중...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Section 2: Manual Trigger Section -->
+          <h3 style="font-size: 1.02rem; margin-bottom: 0.8rem; color: #fff;">수동 즉시 수집 (Manual Trigger)</h3>
           
           <div style="display: flex; flex-direction: column; gap: 0.8rem;">
             <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: var(--radius-sm);">
@@ -1617,7 +1680,7 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=20260921_5"></script>
+  <script src="/js/app.js?v=20261008_1"></script>
 </body>
 </html>
 

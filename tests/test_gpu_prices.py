@@ -55,6 +55,14 @@ def test_api_gpu_endpoints(client):
     assert prices_data["status"] == "success"
     assert "H100" in prices_data["kpis"]
 
+    # Test sync endpoint
+    sync_res = client.post("/api/gpu/sync", json={"target_date": "2026-10-08"})
+    assert sync_res.status_code == 200
+    sync_data = sync_res.get_json()
+    assert sync_data["status"] == "success"
+    assert sync_data["sync_date"] == "2026-10-08"
+    assert "H100" in sync_data["synced_models"]
+
     # Test history endpoint
     hist_res = client.get("/api/gpu/history?model=H100&limit=10")
     assert hist_res.status_code == 200

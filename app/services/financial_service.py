@@ -3,6 +3,7 @@ Quarterly Financial Metrics Service
 Manages 10-Q / 10-K quarterly earnings data from 2020 to present:
 Revenue, Operating Income, Net Income, Gross Margin, CapEx, and Segment revenues.
 """
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from app.models.database import get_db, query_db
 
@@ -22,6 +23,65 @@ class FinancialService:
             return {"currency": "TWD", "fx_rate": 32.0, "symbol": "NT$", "label": "NT$32/$ (TWD)"}
         else:
             return {"currency": "USD", "fx_rate": 1.0, "symbol": "$", "label": "USD (기준)"}
+
+    @staticmethod
+    def get_calendar_period_info(ticker: str, fiscal_year: str, fiscal_quarter: str, fy_end: str = "12") -> Dict[str, str]:
+        """
+        Map company's Fiscal Quarter (FY) to actual Operating Period and Calendar Quarter (CY).
+        Handles non-December fiscal year ends:
+        - AAPL: FY-end '09' (Q1=10~12월 Holiday, Q2=01~03월, Q3=04~06월, Q4=07~09월)
+        - MSFT: FY-end '06' (Q1=07~09월, Q2=10~12월, Q3=01~03월, Q4=04~06월)
+        - NVDA: FY-end '01' (Q1=02~04월, Q2=05~07월, Q3=08~10월, Q4=11~01월)
+        - AVGO: FY-end '10' (Q1=11~01월, Q2=02~04월, Q3=05~07월, Q4=08~10월)
+        - Others: FY-end '12' (Q1=01~03월, Q2=04~06월, Q3=07~09월, Q4=10~12월)
+        """
+        try:
+            yr = int(fiscal_year)
+        except Exception:
+            yr = 2024
+        fq = str(fiscal_quarter).upper()
+
+        if fy_end == "09":  # AAPL (Apple)
+            mapping = {
+                "Q1": (f"CY{yr-1}-Q4", f"{yr-1}.10~12월"),
+                "Q2": (f"CY{yr}-Q1", f"{yr}.01~03월"),
+                "Q3": (f"CY{yr}-Q2", f"{yr}.04~06월"),
+                "Q4": (f"CY{yr}-Q3", f"{yr}.07~09월")
+            }
+        elif fy_end == "06":  # MSFT (Microsoft)
+            mapping = {
+                "Q1": (f"CY{yr-1}-Q3", f"{yr-1}.07~09월"),
+                "Q2": (f"CY{yr-1}-Q4", f"{yr-1}.10~12월"),
+                "Q3": (f"CY{yr}-Q1", f"{yr}.01~03월"),
+                "Q4": (f"CY{yr}-Q2", f"{yr}.04~06월")
+            }
+        elif fy_end == "01":  # NVDA (NVIDIA)
+            mapping = {
+                "Q1": (f"CY{yr-1}-Q1", f"{yr-1}.02~04월"),
+                "Q2": (f"CY{yr-1}-Q2", f"{yr-1}.05~07월"),
+                "Q3": (f"CY{yr-1}-Q3", f"{yr-1}.08~10월"),
+                "Q4": (f"CY{yr-1}-Q4", f"{yr-1}.11~{yr}.01월")
+            }
+        elif fy_end == "10":  # AVGO (Broadcom)
+            mapping = {
+                "Q1": (f"CY{yr}-Q1", f"{yr-1}.11~{yr}.01월"),
+                "Q2": (f"CY{yr}-Q2", f"{yr}.02~04월"),
+                "Q3": (f"CY{yr}-Q3", f"{yr}.05~07월"),
+                "Q4": (f"CY{yr}-Q4", f"{yr}.08~10월")
+            }
+        else:  # Standard 12 (GOOGL, META, AMZN, TSM, KR leaders)
+            mapping = {
+                "Q1": (f"CY{yr}-Q1", f"{yr}.01~03월"),
+                "Q2": (f"CY{yr}-Q2", f"{yr}.04~06월"),
+                "Q3": (f"CY{yr}-Q3", f"{yr}.07~09월"),
+                "Q4": (f"CY{yr}-Q4", f"{yr}.10~12월")
+            }
+
+        cy_quarter, operating_period = mapping.get(fq, (f"CY{yr}-{fq}", f"{yr}년 {fq}"))
+        return {
+            "calendar_quarter": cy_quarter,
+            "operating_period": operating_period
+        }
 
     def record_metric(
         self,
@@ -89,7 +149,7 @@ class FinancialService:
             """
             SELECT id, filing_type, fiscal_year, fiscal_quarter, filed_date, accession_number, source_url
             FROM filing
-            WHERE entity_id = ? AND filing_type IN ('10-Q', '10-K')
+            WHERE entity_id = ? AND filing_type IN ('10-Q', '10-K', '20-F', '6-K')
             """,
             (entity["id"],)
         )
@@ -118,6 +178,16 @@ class FinancialService:
         sorted_keys = sorted(grouped.keys(), reverse=True)
         series = []
         fx_info = self.get_ticker_fx_info(ticker)
+        fy_end = entity.get("fiscal_year_end") if entity else "12"
+
+        fy_guide_map = {
+            "09": "9월 결산 (애플: FY Q1=10~12월 연말 홀리데이, FY Q3=4~6월 실적)",
+            "06": "6월 결산 (마이크로소프트: FY Q4=4~6월 실적, FY Q1=7~9월 실적)",
+            "01": "1월 결산 (엔비디아: FY Q2=5~7월 실적, FY Q1=2~4월 실적)",
+            "10": "10월 결산 (브로드컴: FY Q3=5~7월 실적, 달력 분기 대비 약 1개월 지연)",
+            "12": "12월 결산 (달력 분기 Calendar Quarter와 정확히 일치)"
+        }
+        fy_guide = fy_guide_map.get(str(fy_end).zfill(2), f"{fy_end}월 결산")
 
         for k in sorted_keys:
             item = grouped[k]
@@ -135,8 +205,10 @@ class FinancialService:
             # Corresponding filing
             f_info = filing_map.get(k, {})
 
+            # Calendar & Operating Period Mapping
+            cal_info = self.get_calendar_period_info(ticker, item["fiscal_year"], item["fiscal_quarter"], str(fy_end).zfill(2))
+
             # Earnings release date (실적발표일)
-            fy_end = entity.get("fiscal_year_end") if entity else "12"
             rel_date = (
                 f_info.get("filed_date")
                 or self._get_default_release_date(ticker, item["fiscal_year"], item["fiscal_quarter"], fy_end)
@@ -167,11 +239,32 @@ class FinancialService:
                 rev_twd_b = (rev * fx_info["fx_rate"]) / 1_000
                 orig_rev_str = f"NT${rev_twd_b:.0f}B"
 
+            # If an actual SEC filing (10-Q / 10-K / 20-F) exists in DB, it is confirmed historical data
+            has_filing = bool(f_info.get("id"))
+
+            # Determine whether this quarter's result is an estimate (추정):
+            # 1. If an official filing is already recorded in DB, it is confirmed actuals (not an estimate).
+            # 2. If release date is known, check against current date:
+            #    - Future date (> today): not released yet -> estimate (True).
+            #    - Past or today (<= today): already released -> actuals (False).
+            # 3. Fallback: if rel_date is missing, compare calendar year against current year.
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            if has_filing:
+                is_est = False
+            elif rel_date:
+                is_est = rel_date > today_str
+            else:
+                is_est = yr > int(today_str[:4])
+
             series.append({
                 "period": k,
                 "period_key": k,
                 "fiscal_year": item["fiscal_year"],
                 "fiscal_quarter": item["fiscal_quarter"],
+                "calendar_quarter": cal_info["calendar_quarter"],
+                "operating_period": cal_info["operating_period"],
+                "display_period": f"{k} ({cal_info['operating_period']})",
+                "is_estimate": is_est,
                 "revenue": rev,
                 "revenue_yoy_pct": rev_yoy,
                 "operating_income": op_inc,
@@ -199,6 +292,8 @@ class FinancialService:
             "status": "success",
             "ticker": ticker,
             "entity": dict(entity) if entity else {},
+            "fiscal_year_end": str(fy_end).zfill(2),
+            "fiscal_year_end_guide": fy_guide,
             "fx_info": fx_info,
             "count": len(series),
             "series": series
@@ -597,6 +692,15 @@ class FinancialService:
                 "2026-Q1": "메모리 가격 상승 및 플래그십 모바일 회복으로 분기 영업이익 57.2조원 기록.",
                 "2025-Q4": "DS부문 수익성 회복 및 AI 반도체 공급 확대로 분기 영업이익 20.1조원 달성.",
                 "2024-Q4": "고대역폭 메모리 및 선단 공정 전환 투자 확대로 연간 매출 300.9조원 달성."
+            },
+            "MU": {
+                "2026-Q4": "AI 슈퍼인텔리전스(SI) 시대 도래로 분기 매출 $54.2B, 연간 매출 $133.2B 사상 최대 경신. HBM3E 및 차세대 HBM4 수요 폭증.",
+                "2026-Q3": "HBM3E 8단/12단 2026년 캐파 완판 지속. 분기 매출 $41.5B, 영업이익률 80.4% 달성.",
+                "2026-Q2": "클라우드 메모리 사업부 매출 폭증 및 DDR5 고단화 프리미엄으로 분기 매출 $23.9B 달성.",
+                "2026-Q1": "AI 데이터센터향 고용량 eSSD 및 1-beta nm 선단 DRAM 공급 확대로 분기 매출 $13.6B 기록.",
+                "2025-Q4": "HBM3E 양산 본격화 및 데이터센터 매출 비중 과반 돌파. 분기 매출 $11.3B, 영업이익 $3.65B 달성.",
+                "2025-Q3": "AI 서버향 프리미엄 메모리 수요 견인으로 분기 매출 $9.3B 달성.",
+                "2024-Q4": "HBM3E 엔비디아 공급 및 데이터센터 업사이클 진입으로 연간 흑자 전환 ($7.75B)."
             }
         }
         return mda_notes.get(ticker, {}).get(period_key, f"{ticker} {period_key} 분기 경영진 실적 분석 및 정기 공시.")

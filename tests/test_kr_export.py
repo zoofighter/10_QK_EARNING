@@ -22,5 +22,23 @@ class TestKoreaExportCollector(unittest.TestCase):
         )
         self.assertEqual(res["status"], "success")
 
+    def test_fetch_customs_api(self):
+        collector = KoreaExportCollector()
+        res = collector.fetch_customs_api(start_year=2026, end_year=2026)
+        if res.get("status") == "success":
+            self.assertGreater(res["synced_count"], 0)
+            self.assertIn("latest", res)
+            history = collector.get_export_history(indicator_type="KR_SEMI_EXPORT_MONTHLY_AMT", limit=5)
+            self.assertGreater(len(history), 0)
+
+    def test_fetch_10day_customs_api(self):
+        collector = KoreaExportCollector()
+        res = collector.fetch_10day_customs_api(strt_yymm="202608", end_yymm="202609")
+        if res.get("status") == "success":
+            self.assertGreater(res["count"], 0)
+            self.assertIn("latest", res)
+            history = collector.get_export_history(indicator_type="KR_TOTAL_EXPORT_AMT", limit=5)
+            self.assertGreater(len(history), 0)
+
 if __name__ == "__main__":
     unittest.main()

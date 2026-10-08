@@ -468,6 +468,35 @@ def seed_kr_export():
     cnt = collector.seed_sample_export_data()
     return jsonify({"status": "success", "seeded_count": cnt, "message": "10-day semiconductor export sample data seeded"})
 
+@api_bp.route("/indicators/kr-export/fetch", methods=["POST"])
+def fetch_kr_export_api():
+    """Fetch official semiconductor export statistics from Korea Customs Service Open API."""
+    payload = request.get_json(silent=True) or {}
+    start_year = payload.get("start_year")
+    end_year = payload.get("end_year")
+    hs_code = payload.get("hs_code", "8542")
+
+    collector = KoreaExportCollector()
+    result = collector.fetch_customs_api(
+        start_year=int(start_year) if start_year else None,
+        end_year=int(end_year) if end_year else None,
+        hs_code=hs_code
+    )
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result)
+
+@api_bp.route("/indicators/kr-export/fetch-10day", methods=["POST"])
+def fetch_10day_export_api():
+    """Fetch 10-day provisional trade statistics from Korea Customs Service Open API."""
+    payload = request.get_json(silent=True) or {}
+    strt_yymm = payload.get("strt_yymm")
+    end_yymm = payload.get("end_yymm")
+
+    collector = KoreaExportCollector()
+    result = collector.fetch_10day_customs_api(strt_yymm=strt_yymm, end_yymm=end_yymm)
+    return jsonify(result)
+
 # ─── Consensus & Beat/Miss Endpoints ───
 
 @api_bp.route("/consensus", methods=["GET"])
@@ -815,6 +844,17 @@ def seed_gpu_prices():
         "seeded_count": cnt,
         "message": f"{cnt} GPU rental spot price data points seeded successfully."
     })
+
+@api_bp.route("/gpu/sync", methods=["POST"])
+def sync_gpu_prices():
+    """Synchronize latest real-market GPU cloud rental spot prices to current date."""
+    from app.services.gpu_price_collector import GpuPriceCollector
+    collector = GpuPriceCollector()
+    body = request.get_json(silent=True) or {}
+    target_date = body.get("target_date")
+    result = collector.sync_latest_spot_prices(target_date=target_date)
+    return jsonify(result)
+
 
 # ==============================================================================
 # Analyst Reports & Target Price Tracking APIs
