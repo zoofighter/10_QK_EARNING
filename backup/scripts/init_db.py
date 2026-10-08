@@ -282,100 +282,16 @@ CREATE TABLE IF NOT EXISTS fintwit_post (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fintwit_ticker_date ON fintwit_post(ticker, posted_at DESC);
--- 16. Mega Contracts (Memory Claude Integration)
-CREATE TABLE IF NOT EXISTS contracts (
-    contract_id     TEXT PRIMARY KEY,
-    buyer_id        TEXT NOT NULL,
-    seller_id       TEXT NOT NULL,
-    contract_type   TEXT NOT NULL,
-    value_b         REAL,
-    currency        TEXT DEFAULT 'USD',
-    announced_date  TEXT,
-    start_date      TEXT,
-    end_date        TEXT,
-    description     TEXT,
-    product_type    TEXT,
-    confidence      TEXT DEFAULT 'C3',
-    source          TEXT,
-    raw_source      TEXT,
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now'))
+
+-- 15. Analyst Report Full-Text Search (FTS5)
+CREATE VIRTUAL TABLE IF NOT EXISTS analyst_report_fts USING fts5(
+    report_id UNINDEXED,
+    ticker,
+    broker_name,
+    title,
+    content_text,
+    tokenize = 'unicode61'
 );
-
-CREATE INDEX IF NOT EXISTS idx_contract_buyer ON contracts(buyer_id);
-CREATE INDEX IF NOT EXISTS idx_contract_seller ON contracts(seller_id);
-
--- 17. Fab Capacity (Memory Claude Integration)
-CREATE TABLE IF NOT EXISTS fab_capacity (
-    fab_id              TEXT PRIMARY KEY,
-    entity_id           TEXT NOT NULL,
-    fab_name            TEXT NOT NULL,
-    location_city       TEXT,
-    location_country    TEXT,
-    process_node        TEXT,
-    fab_type            TEXT DEFAULT 'FAB',
-    wspm_current        REAL,
-    wspm_target         REAL,
-    ramp_start_date     TEXT,
-    ramp_end_date       TEXT,
-    capex_invested_b    REAL,
-    utilization_pct     REAL,
-    yield_pct           REAL,
-    status              TEXT DEFAULT 'OPERATING',
-    key_customers       TEXT,
-    key_notes           TEXT,
-    raw_source          TEXT,
-    created_at          TEXT DEFAULT (datetime('now')),
-    updated_at          TEXT DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_fab_entity ON fab_capacity(entity_id);
-CREATE INDEX IF NOT EXISTS idx_fab_status ON fab_capacity(status);
-
--- 18. Datacenter Capacity (Memory Claude Integration)
-CREATE TABLE IF NOT EXISTS datacenter_capacity (
-    dc_id               TEXT PRIMARY KEY,
-    entity_id           TEXT NOT NULL,
-    dc_name             TEXT NOT NULL,
-    location_state      TEXT,
-    location_country    TEXT DEFAULT 'USA',
-    power_mw_current    REAL,
-    power_mw_target     REAL,
-    power_source        TEXT,
-    cooling_type        TEXT,
-    gpu_cluster_target  INTEGER,
-    primary_chips       TEXT,
-    online_date         TEXT,
-    status              TEXT DEFAULT 'CONSTRUCTION',
-    capex_est_b         REAL,
-    key_notes           TEXT,
-    source              TEXT,
-    created_at          TEXT DEFAULT (datetime('now')),
-    updated_at          TEXT DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_dc_entity ON datacenter_capacity(entity_id);
-CREATE INDEX IF NOT EXISTS idx_dc_status ON datacenter_capacity(status);
-
--- 19. Company News (News Intelligence)
-CREATE TABLE IF NOT EXISTS news (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    url          TEXT UNIQUE NOT NULL,
-    title        TEXT NOT NULL,
-    snippet      TEXT,
-    source       TEXT NOT NULL,
-    company      TEXT NOT NULL,
-    ticker       TEXT,
-    query        TEXT,
-    score        INTEGER DEFAULT 0,
-    published    TEXT,
-    collected_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_news_ticker ON news(ticker);
-CREATE INDEX IF NOT EXISTS idx_news_company ON news(company);
-CREATE INDEX IF NOT EXISTS idx_news_score ON news(score DESC);
-CREATE INDEX IF NOT EXISTS idx_news_published ON news(published DESC);
 """
 
 def init_database():
