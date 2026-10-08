@@ -365,13 +365,6 @@
         <div style="display: flex; gap: 0.6rem; align-items: center;">
           <label style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 600;">기업 선택:</label>
           <select id="quarterly-ticker-select" class="btn" style="min-width: 240px; font-weight: 700; color: var(--accent-cyan); background: var(--bg-card);" onchange="loadQuarterlyFinancials(this.value)">
-            <optgroup label="L3 컴퓨팅 / AI 가속기 (5개사)">
-              <option value="NVDA" selected>NVDA (엔비디아)</option>
-              <option value="AMD">AMD (AMD)</option>
-              <option value="AVGO">AVGO (브로드컴)</option>
-              <option value="ARM">ARM (Arm)</option>
-              <option value="INTC">INTC (인텔)</option>
-            </optgroup>
             <optgroup label="L2 하이퍼스케일러 (7개사)">
               <option value="MSFT">MSFT (마이크로소프트)</option>
               <option value="GOOGL">GOOGL (구글/알파벳)</option>
@@ -380,6 +373,13 @@
               <option value="ORCL">ORCL (오라클)</option>
               <option value="CRWV">CRWV (코어위브)</option>
               <option value="NBIS">NBIS (네비우스)</option>
+            </optgroup>
+            <optgroup label="L3 컴퓨팅 / AI 가속기 (5개사)">
+              <option value="NVDA" selected>NVDA (엔비디아)</option>
+              <option value="AMD">AMD (AMD)</option>
+              <option value="AVGO">AVGO (브로드컴)</option>
+              <option value="ARM">ARM (Arm)</option>
+              <option value="INTC">INTC (인텔)</option>
             </optgroup>
             <optgroup label="L4 파운드리 / 반도체 장비 (7개사)">
               <option value="TSM">TSM (TSMC)</option>

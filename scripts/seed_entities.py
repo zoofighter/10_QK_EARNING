@@ -74,10 +74,10 @@ ENTITIES = [
 # Sample upcoming earnings calendar to demonstrate calendar UI immediately
 CALENDAR_SEEDS = [
     ("NVDA", "2026", "Q3", "2026-11-25", "17:00", "CONFIRMED"),
-    ("GOOGL", "2026", "Q3", "2026-10-01", "16:30", "UPCOMING"),
-    ("AMZN", "2026", "Q3", "2026-10-06", "17:30", "UPCOMING"),
+    ("GOOGL", "2026", "Q3", "2026-10-01", "16:30", "COMPLETED"),
+    ("AMZN", "2026", "Q3", "2026-10-06", "17:30", "COMPLETED"),
     ("META", "2026", "Q3", "2026-10-08", "17:00", "UPCOMING"),
-    ("MSFT", "2026", "Q1", "2026-10-15", "17:30", "UPCOMING"),
+    ("MSFT", "2027", "Q1", "2026-10-15", "17:30", "UPCOMING"),
     ("TSM", "2026", "Q3", "2026-10-16", "02:00", "UPCOMING"),
     ("ASML", "2026", "Q3", "2026-10-21", "09:00", "UPCOMING"),
     ("AAPL", "2026", "Q4", "2026-10-29", "17:00", "UPCOMING"),

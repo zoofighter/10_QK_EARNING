@@ -95,13 +95,13 @@ async function loadOverview() {
     if (data.upcoming_earnings && data.upcoming_earnings.length > 0) {
       calBody.innerHTML = data.upcoming_earnings.map(item => `
         <tr>
-          <td><span class="status-pill" style="font-weight:700;">${item.d_day}</span></td>
+          <td>${formatDDayBadge(item.d_day)}</td>
           <td><strong>${item.ticker}</strong> <span style="font-size:0.75rem; color:var(--text-muted);">${item.name_ko}</span></td>
           <td><span class="layer-tag ${getLayerShort(item.layer_code)}">${getLayerShort(item.layer_code)}</span></td>
           <td>${item.fiscal_year && item.fiscal_quarter ? `${item.fiscal_year}-${item.fiscal_quarter}` : (item.fiscal_year || '-')}</td>
           <td>${item.expected_date}</td>
           <td>${item.call_time_et || '미정'}</td>
-          <td><span style="font-size:0.75rem; color:var(--accent-cyan);">${item.status || 'UPCOMING'}</span></td>
+          <td>${formatCalendarStatus(item.status)}</td>
         </tr>
       `).join("");
     } else {
@@ -177,8 +177,8 @@ function populateQuarterlyCompanySelect(entities) {
   const currentVal = select.value || "NVDA";
 
   const layerOrder = [
-    "L3_COMPUTE",
     "L2_HYPERSCALER",
+    "L3_COMPUTE",
     "L4_FOUNDRY",
     "L5_MEMORY",
     "L6_OPTICAL",
@@ -360,7 +360,35 @@ async function loadFilingsTable() {
   }
 }
 
-// 4. Calendar Loader
+// 4. Calendar Loader & Helpers
+function formatDDayBadge(dDay) {
+  if (!dDay || dDay === "-") return `<span class="status-pill" style="font-weight:700;">-</span>`;
+  if (dDay === "D-Day") {
+    return `<span class="status-pill" style="background: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.5); font-weight: 800; box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);">🔥 D-Day (오늘 발표)</span>`;
+  }
+  if (dDay.startsWith("D-")) {
+    const days = parseInt(dDay.replace("D-", ""), 10);
+    if (!isNaN(days) && days <= 7) {
+      return `<span class="status-pill" style="background: rgba(6, 182, 212, 0.2); color: var(--accent-cyan); border: 1px solid rgba(6, 182, 212, 0.4); font-weight: 700;">⚡ ${dDay}</span>`;
+    }
+    return `<span class="status-pill" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 700;">${dDay}</span>`;
+  }
+  if (dDay.startsWith("D+")) {
+    return `<span class="status-pill" style="background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.25); font-weight: 600;">${dDay}</span>`;
+  }
+  return `<span class="status-pill" style="font-weight:700;">${dDay}</span>`;
+}
+
+function formatCalendarStatus(status) {
+  if (status === "COMPLETED") {
+    return `<span style="font-size:0.78rem; color:var(--text-muted); font-weight:600;">✅ 발표완료</span>`;
+  }
+  if (status === "CONFIRMED") {
+    return `<span style="font-size:0.78rem; color:#A78BFA; font-weight:700;">확정 (CONFIRMED)</span>`;
+  }
+  return `<span style="font-size:0.78rem; color:var(--accent-cyan); font-weight:600;">${status || 'UPCOMING'}</span>`;
+}
+
 async function loadCalendarTable() {
   try {
     const res = await fetch("/api/calendar");
@@ -376,14 +404,14 @@ async function loadCalendarTable() {
 
     tbody.innerHTML = data.map(item => `
       <tr>
-        <td><span class="status-pill" style="font-weight:700;">${item.d_day}</span></td>
+        <td>${formatDDayBadge(item.d_day)}</td>
         <td><strong>${item.ticker}</strong></td>
         <td>${item.name_ko}</td>
         <td><span class="layer-tag ${getLayerShort(item.layer_code)}">${getLayerShort(item.layer_code)}</span></td>
         <td>${item.fiscal_year && item.fiscal_quarter ? `${item.fiscal_year}-${item.fiscal_quarter}` : (item.fiscal_year || '-')}</td>
         <td>${item.expected_date}</td>
         <td>${item.call_time_et ? `${item.call_time_et} ET` : '시간 미정'}</td>
-        <td><span style="font-size:0.78rem; color:var(--accent-cyan); font-weight:600;">${item.status}</span></td>
+        <td>${formatCalendarStatus(item.status)}</td>
       </tr>
     `).join("");
   } catch (err) {

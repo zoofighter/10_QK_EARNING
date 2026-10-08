@@ -293,6 +293,8 @@ def get_calendar():
             diff = (exp - date.today()).days
             r["days_left"] = diff
             r["d_day"] = f"D-{diff}" if diff > 0 else ("D-Day" if diff == 0 else f"D+{abs(diff)}")
+            if diff < 0 and r.get("status") == "UPCOMING":
+                r["status"] = "COMPLETED"
         except Exception:
             r["days_left"] = 999
             r["d_day"] = "-"
