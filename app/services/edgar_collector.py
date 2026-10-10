@@ -229,6 +229,24 @@ class EdgarCollector:
                     else: # month in [11, 12, 1]
                         quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
                         fiscal_year = str(year - 1 if month == 1 else year)
+                elif fy_end == "05":
+                    # For entities with May fiscal year end (e.g. ORCL - Oracle):
+                    # Jun-Aug (Reported Sep): Q1 (FY = year + 1) -> e.g. 2026.06~08 is FY2027 Q1
+                    # Sep-Nov (Reported Dec): Q2 (FY = year + 1) -> e.g. 2026.09~11 is FY2027 Q2
+                    # Dec-Feb (Reported Mar): Q3 (FY = year)
+                    # Mar-May (Reported Jun): Q4 or FY (FY = year) -> e.g. 2026.03~05 is FY2026 Q4/FY
+                    if month in [7, 8, 9]:
+                        quarter = "Q1"
+                        fiscal_year = str(year + 1) if year else ""
+                    elif month in [10, 11, 12]:
+                        quarter = "Q2"
+                        fiscal_year = str(year + 1) if year else ""
+                    elif month in [1, 2, 3]:
+                        quarter = "Q3"
+                        fiscal_year = str(year) if year else ""
+                    else: # month in [4, 5, 6]
+                        quarter = "FY" if form in ["10-K", "20-F"] else "Q4"
+                        fiscal_year = str(year) if year else ""
                 elif fy_end == "06":
                     # For entities with June fiscal year end (e.g. MSFT, LRCX, KLAC, WDC):
                     if month in [10, 11, 12]:

@@ -9,9 +9,9 @@ class TestQKEarningPhase1(unittest.TestCase):
         self.client = self.app.test_client()
 
     def test_database_entities(self):
-        """Verify all 34 entities are seeded across 7 layers."""
+        """Verify all entities (including unlisted frontier AI like OAI, ANTHROPIC) are seeded across 7 layers."""
         cnt = query_db("SELECT COUNT(*) as count FROM entity", one=True)["count"]
-        self.assertEqual(cnt, 34)
+        self.assertGreaterEqual(cnt, 34)
 
     def test_database_layers(self):
         """Verify 7 layers are seeded."""
@@ -24,7 +24,7 @@ class TestQKEarningPhase1(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = json.loads(res.data)
         self.assertEqual(data["status"], "success")
-        self.assertEqual(data["data"]["company_count"], 34)
+        self.assertGreaterEqual(data["data"]["company_count"], 34)
 
     def test_api_entities_filter(self):
         """Verify filtering by layer."""

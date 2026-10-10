@@ -1257,6 +1257,7 @@ mark.fts-hl {
   border-radius: var(--radius-sm);
   background: rgba(18, 25, 42, 0.4);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .layer-accordion-header {
@@ -1702,7 +1703,7 @@ mark.fts-hl {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   ─── Macro Hub (Memory Claude Engine) ───
+   ─── Macro Hub (MacroFlow Engine) ───
    ═══════════════════════════════════════════════════════════════════ */
 
 .macro-hub-container {

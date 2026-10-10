@@ -281,9 +281,10 @@ def get_calendar():
     """Earnings calendar entries."""
     rows = query_db(
         """
-        SELECT ec.*, e.ticker, e.name_en, e.name_ko, e.layer_code
+        SELECT ec.*, e.ticker, e.name_en, e.name_ko, e.layer_code, l.name_ko as layer_name_ko
         FROM earning_calendar ec
         JOIN entity e ON ec.entity_id = e.id
+        LEFT JOIN layer l ON e.layer_code = l.code
         ORDER BY ec.expected_date ASC
         """
     )
@@ -300,6 +301,20 @@ def get_calendar():
             r["d_day"] = "-"
 
     return jsonify({"status": "success", "data": rows, "count": len(rows)})
+
+@api_bp.route("/calendar/sync", methods=["POST"])
+def sync_calendar():
+    """Trigger manual synchronization of earnings announcement dates via Yahoo Finance."""
+    from app.services.earnings_calendar_collector import EarningsCalendarCollector
+    ticker = (request.get_json() or {}).get("ticker")
+    collector = EarningsCalendarCollector()
+    if ticker:
+        res = collector.sync_calendar_for_ticker(ticker)
+        if not res:
+            return jsonify({"status": "error", "message": f"Could not sync calendar for {ticker}"}), 400
+        return jsonify({"status": "success", "data": res})
+    res = collector.sync_calendar_all_entities()
+    return jsonify(res)
 
 @api_bp.route("/prices/<ticker>", methods=["GET"])
 def get_prices(ticker):
@@ -499,6 +514,34 @@ def fetch_10day_export_api():
     result = collector.fetch_10day_customs_api(strt_yymm=strt_yymm, end_yymm=end_yymm)
     return jsonify(result)
 
+@api_bp.route("/indicators/kr-export/parse-press-release", methods=["POST"])
+def parse_kr_export_press_release():
+    """Parse customs 10-day press release or news text and optionally save to DB."""
+    payload = request.get_json(silent=True) or {}
+    text = payload.get("text", "")
+    if not text.strip():
+        return jsonify({"status": "error", "message": "파싱할 보도자료 또는 기사 텍스트가 비어있습니다."}), 400
+
+    collector = KoreaExportCollector()
+    save_to_db = payload.get("save", True)
+    default_year = int(payload.get("year", 2026))
+
+    if save_to_db:
+        res = collector.parse_and_save_press_release(text, default_year=default_year)
+    else:
+        from app.services.kr_export_collector import CustomsPressReleaseParser
+        parsed = CustomsPressReleaseParser.parse_text(text, default_year=default_year)
+        res = {"status": parsed["status"], "parsed": parsed}
+
+    return jsonify(res)
+
+@api_bp.route("/indicators/kr-export/auto-collect-press", methods=["POST"])
+def auto_collect_kr_export_press():
+    """Automatically crawl and parse the latest 10-day export press releases from news/RSS."""
+    collector = KoreaExportCollector()
+    res = collector.auto_collect_press_releases()
+    return jsonify(res)
+
 # ─── Consensus & Beat/Miss Endpoints ───
 
 @api_bp.route("/consensus", methods=["GET"])
@@ -556,18 +599,24 @@ def seed_consensus():
 def get_memory_spot():
     """Retrieve memory spot price summary and historical trend."""
     indicator_type = request.args.get("type", "SPOT_DRAM_DDR5_16GB")
-    limit = int(request.args.get("limit", 30))
+    limit = int(request.args.get("limit", 50))
 
     collector = MemorySpotCollector()
     summary = collector.get_latest_summary()
     history = collector.get_spot_history(indicator_type=indicator_type, limit=limit)
+
+    series = {}
+    for code in MEMORY_SPOT_TYPES.keys():
+        series[code] = collector.get_spot_history(indicator_type=code, limit=limit)
 
     return jsonify({
         "status": "success",
         "indicator_type": indicator_type,
         "indicator_info": MEMORY_SPOT_TYPES.get(indicator_type, {}),
         "summary": summary,
-        "history": history
+        "history": history,
+        "data": history,
+        "series": series
     })
 
 @api_bp.route("/indicators/memory-spot", methods=["POST"])
@@ -827,12 +876,17 @@ def get_gpu_prices():
 
 @api_bp.route("/gpu/history", methods=["GET"])
 def get_gpu_history():
-    """Retrieve historical rental price series for a specific GPU model."""
+    """Retrieve historical rental price series for a specific GPU model or all models."""
     from app.services.gpu_price_collector import GpuPriceCollector
     model_key = request.args.get("model", "H100")
     limit = int(request.args.get("limit", 50))
     collector = GpuPriceCollector()
     data = collector.get_price_history(model_key=model_key, limit=limit)
+
+    all_series = {}
+    for m in ["H100", "H200", "B200", "A100"]:
+        all_series[m] = collector.get_price_history(model_key=m, limit=limit).get("history", [])
+    data["series"] = all_series
     return jsonify(data)
 
 @api_bp.route("/gpu/seed", methods=["POST"])
@@ -1222,7 +1276,7 @@ def run_scheduler_now():
     """Trigger immediate execution of pre-market jobs."""
     from app.services.report_scheduler import ReportScheduler
     data = request.get_json() or {}
-    job_type = data.get("job_type", "ALL")
+    job_type = data.get("job_type", data.get("job", "ALL")).upper()
     sch = ReportScheduler.get_instance()
     result = sch.run_now(job_type=job_type)
     return jsonify({"status": "success", "data": result})
@@ -1253,6 +1307,7 @@ TICKER_TO_MEM_ID = {
     'ASX': 'ASE',
     'AMKR': 'AMKOR',
     'WDC': 'WESTERN_DIGITAL',
+    'SNDK': 'SANDISK',
     '6600.T': 'KIOXIA',
     'ANET': 'ARISTA',
     'MRVL': 'MARVELL',
@@ -1272,6 +1327,24 @@ MEM_ID_TO_TICKER = {v: k for k, v in TICKER_TO_MEM_ID.items()}
 
 # Curated Value Chain Relationships
 SUPPLY_CHAIN_MAP = {
+    'SNDK': {
+        'role': 'L5 글로벌 선단 낸드 플래시(NAND Flash) 및 AI 데이터센터 eSSD 선도 (WDC 분사)',
+        'suppliers': [
+            {'ticker': 'AMAT', 'name': '어플라이드', 'role': '3D 낸드 고단화 증착 장비'},
+            {'ticker': 'LRCX', 'name': '램리서치', 'role': '고종횡비 HARC 채널홀 식각 장비 공급'},
+            {'ticker': '6600.T', 'name': '키옥시아', 'role': 'BiCS FLASH 합작 팹(JV) 공동 생산 및 R&D'}
+        ],
+        'customers': [
+            {'ticker': 'MSFT', 'name': '마이크로소프트', 'share': 'Azure AI 클라우드 고용량 PCIe Gen5 NVMe eSSD 공급'},
+            {'ticker': 'AMZN', 'name': '아마존 AWS', 'share': '데이터센터 스토리지 풀 eSSD 대량 조달'},
+            {'ticker': 'GOOGL', 'name': '구글', 'share': 'AI 워크로드 캐싱용 엔터프라이즈 QLC SSD 공급'}
+        ],
+        'segments': [
+            {'name': '엔터프라이즈 eSSD (AI/클라우드)', 'pct': 48.0, 'color': '#f59e0b'},
+            {'name': '클라이언트 SSD & 임베디드', 'pct': 34.0, 'color': '#3b82f6'},
+            {'name': '소비자 플래시 스토리지', 'pct': 18.0, 'color': '#10b981'}
+        ]
+    },
     'NVDA': {
         'role': 'L3 AI 가속기 시장 점유율 85%+ 독점적 리더',
         'suppliers': [
@@ -1348,6 +1421,42 @@ SUPPLY_CHAIN_MAP = {
             {'name': '지능형 클라우드 (Azure/Server)', 'pct': 43.5, 'color': '#00a4ef'},
             {'name': '생산성 및 비즈니스 (Office/LinkedIn)', 'pct': 31.8, 'color': '#10b981'},
             {'name': '개인 컴퓨팅 (Windows/Gaming)', 'pct': 24.7, 'color': '#8b5cf6'}
+        ]
+    },
+    'OAI': {
+        'role': 'L7 초거대 파운데이션 LLM 및 Frontier AI 인프라 선도사 (비상장)',
+        'suppliers': [
+            {'ticker': 'MSFT', 'name': '마이크로소프트', 'role': 'Azure 수십만 대 AI 가속기 컴퓨팅 클러스터 & 독점 라이선스'},
+            {'ticker': 'NVDA', 'name': '엔비디아', 'role': 'H100/H200/GB200 AI 가속기 하드웨어'},
+            {'ticker': 'ORCL', 'name': '오라클', 'role': 'OCI 베어메탈 GPU 클라우드 훈련 인프라 연계'}
+        ],
+        'customers': [
+            {'ticker': 'AAPL', 'name': '애플', 'share': 'Apple Intelligence Siri 백엔드 ChatGPT 공식 통합'},
+            {'ticker': 'MSFT', 'name': '마이크로소프트', 'share': 'GitHub Copilot 및 M365 Copilot 모델 제공'},
+            {'ticker': 'ENTERPRISE', 'name': '글로벌 엔터프라이즈', 'share': '3억+ 주간 활성 사용자(WAU) 및 기업용 API'}
+        ],
+        'segments': [
+            {'name': 'ChatGPT 구독 (Plus/Team/Ent)', 'pct': 58.0, 'color': '#10a37f'},
+            {'name': 'API 개발자 플랫폼', 'pct': 32.0, 'color': '#00a4ef'},
+            {'name': '전략적 라이선스 & 기타', 'pct': 10.0, 'color': '#6366f1'}
+        ]
+    },
+    'ANTHROPIC': {
+        'role': 'L7 차세대 Frontier AI 안전성 연구 및 Claude 모델 개발사 (비상장)',
+        'suppliers': [
+            {'ticker': 'AMZN', 'name': '아마존 (AWS)', 'role': '$8B 전략 투자, AWS 전용 Trainium2 & Bedrock 공급'},
+            {'ticker': 'GOOGL', 'name': '구글 (GCP)', 'role': '$2B 투자 및 Google Cloud TPU v5p 인프라 공급'},
+            {'ticker': 'NVDA', 'name': '엔비디아', 'role': 'Blackwell / Hopper GPU 클러스터 컴퓨팅'}
+        ],
+        'customers': [
+            {'ticker': 'AMZN', 'name': '아마존 베드록', 'share': 'AWS Bedrock 최다 채택 모델 (Claude 3.5 Sonnet)'},
+            {'ticker': 'ENTERPRISE', 'name': '글로벌 테크/금융 기업', 'share': '코딩 에이전트(Cursor 등), 사내 리서치 자동화'},
+            {'ticker': 'CLAUDE', 'name': 'Claude Pro/Team 구독', 'share': '전문가 및 엔터프라이즈 워크플로우'}
+        ],
+        'segments': [
+            {'name': '클라우드 Bedrock/Vertex API', 'pct': 62.0, 'color': '#d97706'},
+            {'name': 'Claude Direct 구독', 'pct': 28.0, 'color': '#8b5cf6'},
+            {'name': '엔터프라이즈 맞춤형 모델', 'pct': 10.0, 'color': '#10b981'}
         ]
     }
 }
@@ -1463,8 +1572,10 @@ def get_company_full_profile(ticker):
             financial_summary["latest_quarter"] = latest_q
             q_data = by_quarter[latest_q]
             financial_summary["revenue"] = q_data.get("revenue")
-            financial_summary["op_income"] = q_data.get("op_income")
+            financial_summary["op_income"] = q_data.get("operating_income") or q_data.get("op_income")
             financial_summary["op_margin_pct"] = q_data.get("op_margin_pct")
+            if not financial_summary["op_margin_pct"] and financial_summary["revenue"] and financial_summary["op_income"]:
+                financial_summary["op_margin_pct"] = round((financial_summary["op_income"] / financial_summary["revenue"]) * 100, 1)
             financial_summary["net_income"] = q_data.get("net_income")
             financial_summary["capex"] = q_data.get("capex")
 
@@ -1527,59 +1638,15 @@ def get_company_full_profile(ticker):
 @api_bp.route("/companies/<ticker>/financials", methods=["GET"])
 def get_company_financials_series(ticker):
     """Return long-term quarterly financial history (2020~present) for chart and table."""
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, ticker, name_en, name_ko FROM entity WHERE UPPER(ticker) = UPPER(?)", (ticker,))
-        entity = cur.fetchone()
-        if not entity:
-            return jsonify({"status": "error", "message": f"Entity not found: {ticker}"}), 404
-        entity = dict(entity)
+    start_year = int(request.args.get("start_year", 2020))
+    service = FinancialService()
+    res = service.get_quarterly_financials(ticker=ticker, start_year=start_year)
+    if res.get("status") == "error":
+        return jsonify(res), 404
+    # Ensure backwards compatibility for quarters key
+    res["quarters"] = res.get("series", [])
+    return jsonify(res)
 
-        cur.execute("""
-            SELECT fiscal_year, fiscal_quarter, metric_type, value, unit, currency
-            FROM financial_metric
-            WHERE entity_id = ?
-            ORDER BY fiscal_year ASC, fiscal_quarter ASC
-        """, (entity["id"],))
-        rows = cur.fetchall()
-
-        by_quarter = {}
-        for r in rows:
-            q_key = f"{r['fiscal_year']}-{r['fiscal_quarter']}"
-            if q_key not in by_quarter:
-                by_quarter[q_key] = {
-                    "quarter": q_key,
-                    "year": r["fiscal_year"],
-                    "q": r["fiscal_quarter"],
-                    "revenue": None,
-                    "op_income": None,
-                    "op_margin_pct": None,
-                    "net_income": None,
-                    "capex": None,
-                    "eps": None
-                }
-            by_quarter[q_key][r["metric_type"]] = r["value"]
-
-        # Sort quarters chronologically
-        quarters_list = sorted(by_quarter.values(), key=lambda x: (x["year"], x["q"]))
-
-        # Calculate YoY for each quarter
-        for i, q in enumerate(quarters_list):
-            year_num = int(q["year"])
-            prev_year_str = str(year_num - 1)
-            prev_q_key = f"{prev_year_str}-{q['q']}"
-            if prev_q_key in by_quarter and by_quarter[prev_q_key].get("revenue") and q.get("revenue"):
-                prev_rev = by_quarter[prev_q_key]["revenue"]
-                q["revenue_yoy"] = round(((q["revenue"] - prev_rev) / prev_rev) * 100, 1)
-            else:
-                q["revenue_yoy"] = None
-
-        return jsonify({
-            "status": "success",
-            "ticker": entity["ticker"],
-            "name": entity["name_ko"],
-            "quarters": quarters_list
-        })
 
 
 @api_bp.route("/companies/<ticker>/filings", methods=["GET"])
@@ -1636,9 +1703,10 @@ def get_company_filings_list(ticker):
 
 @api_bp.route("/companies/<ticker>/news", methods=["GET"])
 def get_company_news(ticker):
-    """Return latest news for company from news table."""
+    """Return latest news for company from news table, with live auto-fetch fallback."""
     limit = int(request.args.get("limit", 40))
     source = request.args.get("source", "").strip().lower()
+    force_refresh = request.args.get("refresh", "false").lower() in ("true", "1", "yes")
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -1648,21 +1716,35 @@ def get_company_news(ticker):
             return jsonify({"status": "error", "message": f"Entity not found: {ticker}"}), 404
         entity = dict(entity)
 
-        # Match by ticker or Korean name or English name
-        query = """
-            SELECT id, url, title, snippet, source, company, ticker, score, published, collected_at
-            FROM news
-            WHERE (UPPER(ticker) = UPPER(?) OR company LIKE ? OR company LIKE ? OR query LIKE ?)
-        """
-        params = [entity["ticker"], f"%{entity['name_ko']}%", f"%{entity['name_en']}%", f"%{entity['ticker']}%"]
-        if source:
-            query += " AND source = ?"
-            params.append(source)
-        query += " ORDER BY published DESC, score DESC LIMIT ?"
-        params.append(limit)
+        clean_ticker = entity["ticker"].split(".")[0]
 
-        cur.execute(query, params)
-        news_items = [dict(r) for r in cur.fetchall()]
+        def fetch_db_news():
+            query = """
+                SELECT id, url, title, snippet, source, company, ticker, score, published, collected_at
+                FROM news
+                WHERE (UPPER(ticker) = UPPER(?) OR UPPER(ticker) = UPPER(?) OR company LIKE ? OR company LIKE ? OR query LIKE ?)
+            """
+            params = [entity["ticker"], clean_ticker, f"%{entity['name_ko']}%", f"%{entity['name_en']}%", f"%{clean_ticker}%"]
+            if source:
+                query += " AND source = ?"
+                params.append(source)
+            query += " ORDER BY published DESC, score DESC LIMIT ?"
+            params.append(limit)
+
+            cur.execute(query, params)
+            return [dict(r) for r in cur.fetchall()]
+
+        news_items = fetch_db_news() if not force_refresh else []
+
+        # If zero news found or user requested forced refresh, collect live via NewsCollector
+        if len(news_items) == 0 or force_refresh:
+            try:
+                from app.services.news_collector import NewsCollector
+                collector = NewsCollector()
+                collector.collect_for_entity(entity["ticker"], entity["name_ko"], entity["name_en"])
+                news_items = fetch_db_news()
+            except Exception as e:
+                print(f"[News API] Auto-fetch news error for {ticker}: {e}")
 
         return jsonify({
             "status": "success",
@@ -1734,12 +1816,15 @@ def get_company_macro_links(ticker):
         entity_name = entity["name_ko"] if entity else ticker
 
         # 1. Contracts where entity is buyer or seller
+        alt_ticker = 'OPENAI' if ticker.upper() in ('OAI', 'OPENAI') else ticker
         cur.execute("""
             SELECT * FROM contracts
             WHERE buyer_id = ? OR seller_id = ?
+               OR buyer_id = ? OR seller_id = ?
+               OR buyer_id LIKE ? OR seller_id LIKE ?
                OR buyer_id LIKE ? OR seller_id LIKE ?
             ORDER BY announced_date DESC
-        """, (mem_id, mem_id, f"%{ticker}%", f"%{ticker}%"))
+        """, (mem_id, mem_id, alt_ticker, alt_ticker, f"%{ticker}%", f"%{ticker}%", f"%{alt_ticker}%", f"%{alt_ticker}%"))
         contracts = [dict(r) for r in cur.fetchall()]
 
         # 2. Fabs

@@ -28,6 +28,8 @@ class ReportScheduler:
         self.last_gpu_run: Optional[str] = None
         self.last_customs_run: Optional[str] = None
         self.last_filings_run: Optional[str] = None
+        self.last_news_run: Optional[str] = None
+        self.last_calendar_run: Optional[str] = None
         self.history_logs: List[Dict[str, Any]] = []
 
     @classmethod
@@ -81,6 +83,14 @@ class ReportScheduler:
                 if current_hour == 6 and current_minute == 30:
                     self.execute_price_sync_job()
 
+                # 1-1. 06:45 KST - Daily Earnings Calendar Sync (yfinance)
+                elif current_hour == 6 and current_minute == 45:
+                    self.execute_calendar_sync_job()
+
+                # 1-2. 07:00 KST - Daily Morning News Sync (Google News & Yahoo RSS)
+                elif current_hour == 7 and current_minute == 0:
+                    self.execute_news_sync_job()
+
                 # 2. 08:00 KST - KR Morning Naver Research & PDFs
                 elif current_hour == 8 and current_minute == 0:
                     self.execute_kr_morning_job()
@@ -96,6 +106,10 @@ class ReportScheduler:
                 # 5. 18:00 KST - SEC EDGAR Top AI Hyperscalers Filings Check
                 elif current_hour == 18 and current_minute == 0:
                     self.execute_edgar_filings_job()
+
+                # 5-1. 19:00 KST - Daily Evening News Sync
+                elif current_hour == 19 and current_minute == 0:
+                    self.execute_news_sync_job()
 
                 # 6. 21:00 KST - US Pre-market Global IB & FinTwit
                 elif current_hour == 21 and current_minute == 0:
@@ -184,7 +198,7 @@ class ReportScheduler:
         self._log("EDGAR_SYNC_RUN", "오후 18:00 SEC EDGAR 주요 AI 하이퍼스케일러 신규 공시 배치 수집 시작")
         try:
             collector = EdgarCollector()
-            sample_tickers = ["NVDA", "GOOGL", "MSFT", "AMZN", "META", "AMD", "TSM", "MU"]
+            sample_tickers = ["NVDA", "ORCL", "GOOGL", "MSFT", "AMZN", "META", "AVGO", "AMD", "TSM", "MU", "ARM", "INTC"]
             results = []
             for t in sample_tickers:
                 try:
@@ -229,11 +243,45 @@ class ReportScheduler:
         self._log("US_EVENING_DONE", f"글로벌 IB & FinTwit 수집 완료: {results}")
         return {"status": "success", "results": results, "run_at": now_str}
 
+    def execute_news_sync_job(self) -> Dict[str, Any]:
+        """Synchronize latest news for all 34 entities via Google News & Yahoo Finance RSS."""
+        from app.services.news_collector import NewsCollector
+        self._log("NEWS_SYNC_RUN", "34개 AI 반도체 밸류체인 기업 최신 중요 뉴스 자동 수집 및 동기화 시작")
+        try:
+            collector = NewsCollector()
+            res = collector.collect_all_entities(min_threshold=20)
+            now_str = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+            self.last_news_run = now_str
+            self._log("NEWS_SYNC_DONE", f"뉴스 동기화 완료: 신규 +{res.get('total_newly_inserted', 0)}건 저장")
+            return {"status": "success", "data": res, "run_at": now_str}
+        except Exception as e:
+            self._log("NEWS_SYNC_ERR", f"뉴스 동기화 실패: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def execute_calendar_sync_job(self) -> Dict[str, Any]:
+        """Synchronize real-world earnings announcement dates for all entities via Yahoo Finance."""
+        from app.services.earnings_calendar_collector import EarningsCalendarCollector
+        self._log("CALENDAR_SYNC_RUN", "오전 06:45 야후 파이낸스 실적 발표 캘린더 자동 동기화 시작")
+        try:
+            collector = EarningsCalendarCollector()
+            res = collector.sync_calendar_all_entities()
+            now_str = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+            self.last_calendar_run = now_str
+            self._log("CALENDAR_SYNC_DONE", f"실적 캘린더 동기화 완료: {res.get('synced_count', 0)}개 기업 최신 일정 반영")
+            return {"status": "success", "data": res, "run_at": now_str}
+        except Exception as e:
+            self._log("CALENDAR_SYNC_ERR", f"실적 캘린더 동기화 실패: {e}")
+            return {"status": "error", "message": str(e)}
+
     def run_now(self, job_type: str = "ALL") -> Dict[str, Any]:
         """Trigger immediate execution of jobs."""
         out = {}
         if job_type in ("PRICE", "ALL"):
             out["price_sync"] = self.execute_price_sync_job()
+        if job_type in ("CALENDAR", "ALL"):
+            out["calendar_sync"] = self.execute_calendar_sync_job()
+        if job_type in ("NEWS", "ALL"):
+            out["news_sync"] = self.execute_news_sync_job()
         if job_type in ("KR_MORNING", "ALL"):
             out["kr_morning"] = self.execute_kr_morning_job()
         if job_type in ("GPU", "ALL"):
@@ -265,6 +313,20 @@ class ReportScheduler:
                 "last_run": self.last_price_run or "대기 중"
             },
             {
+                "id": "calendar_sync",
+                "time": "06:45 KST (매일)",
+                "name": "글로벌 34개사 실적 발표일(Earnings Date) 최신화",
+                "next_run": calc_next(6, 45),
+                "last_run": self.last_calendar_run or "대기 중"
+            },
+            {
+                "id": "news_morning",
+                "time": "07:00 KST (매일)",
+                "name": "34개사 아침 중요 뉴스(Google/Yahoo RSS) 수집",
+                "next_run": calc_next(7, 0),
+                "last_run": self.last_news_run or "대기 중"
+            },
+            {
                 "id": "kr_morning",
                 "time": "08:00 KST (매일)",
                 "name": "국내 증권사 네이버 리포트 & 원문 PDF 수집/색인",
@@ -293,6 +355,13 @@ class ReportScheduler:
                 "last_run": self.last_filings_run or "대기 중"
             },
             {
+                "id": "news_evening",
+                "time": "19:00 KST (매일)",
+                "name": "34개사 저녁 중요 뉴스(Google/Yahoo RSS) 수집",
+                "next_run": calc_next(19, 0),
+                "last_run": self.last_news_run or "대기 중"
+            },
+            {
                 "id": "us_evening",
                 "time": "21:00 KST (매일)",
                 "name": "글로벌 IB 목표주가 리비전 & FinTwit 속보 피드 수집",
@@ -309,6 +378,8 @@ class ReportScheduler:
             "last_kr_run": self.last_kr_run,
             "last_us_run": self.last_us_run,
             "last_price_run": self.last_price_run,
+            "last_calendar_run": self.last_calendar_run,
+            "last_news_run": self.last_news_run,
             "last_gpu_run": self.last_gpu_run,
             "last_customs_run": self.last_customs_run,
             "last_filings_run": self.last_filings_run,

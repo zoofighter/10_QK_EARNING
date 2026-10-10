@@ -69,6 +69,13 @@ class FinancialService:
                 "Q3": (f"CY{yr}-Q3", f"{yr}.05~07월"),
                 "Q4": (f"CY{yr}-Q4", f"{yr}.08~10월")
             }
+        elif fy_end == "05":  # ORCL (Oracle: fiscal year ends May 31)
+            mapping = {
+                "Q1": (f"CY{yr-1}-Q3", f"{yr-1}.06~08월"),
+                "Q2": (f"CY{yr-1}-Q4", f"{yr-1}.09~11월"),
+                "Q3": (f"CY{yr}-Q1", f"{yr-1}.12~{yr}.02월"),
+                "Q4": (f"CY{yr}-Q2", f"{yr}.03~05월")
+            }
         else:  # Standard 12 (GOOGL, META, AMZN, TSM, KR leaders)
             mapping = {
                 "Q1": (f"CY{yr}-Q1", f"{yr}.01~03월"),
@@ -161,6 +168,22 @@ class FinancialService:
             if f.get("fiscal_quarter") == "FY":
                 filing_map[f"{f['fiscal_year']}-Q4"] = f
 
+        # Fetch consensus data (Beat/Miss, Surprise %, 1D/5D Reaction)
+        consensus_rows = query_db(
+            """
+            SELECT fiscal_year, fiscal_quarter, metric_type, consensus_value, actual_value, surprise_pct, beat_miss_status, post_earning_return_1d, post_earning_return_5d
+            FROM consensus
+            WHERE entity_id = ?
+            """,
+            (entity["id"],)
+        )
+        consensus_map = {}
+        for c in consensus_rows:
+            ckey = f"{c['fiscal_year']}-{c['fiscal_quarter']}"
+            if ckey not in consensus_map:
+                consensus_map[ckey] = {}
+            consensus_map[ckey][c["metric_type"]] = c
+
         # Group metrics by quarter
         grouped = {}
         for m in metrics:
@@ -183,6 +206,7 @@ class FinancialService:
         fy_guide_map = {
             "09": "9월 결산 (애플: FY Q1=10~12월 연말 홀리데이, FY Q3=4~6월 실적)",
             "06": "6월 결산 (마이크로소프트: FY Q4=4~6월 실적, FY Q1=7~9월 실적)",
+            "05": "5월 결산 (오라클: FY27 Q1=26년 6~8월 실적, FY27 Q2=26년 9~11월 실적)",
             "01": "1월 결산 (엔비디아: FY Q2=5~7월 실적, FY Q1=2~4월 실적)",
             "10": "10월 결산 (브로드컴: FY Q3=5~7월 실적, 달력 분기 대비 약 1개월 지연)",
             "12": "12월 결산 (달력 분기 Calendar Quarter와 정확히 일치)"
@@ -256,9 +280,31 @@ class FinancialService:
             else:
                 is_est = yr > int(today_str[:4])
 
+            # Extract consensus & surprise info
+            c_info = consensus_map.get(k, {})
+            rev_cons = c_info.get("revenue", {})
+            eps_cons = c_info.get("eps", {})
+            beat_status = rev_cons.get("beat_miss_status") or eps_cons.get("beat_miss_status")
+            surp_pct = rev_cons.get("surprise_pct") if rev_cons.get("surprise_pct") is not None else eps_cons.get("surprise_pct")
+            ret_1d = rev_cons.get("post_earning_return_1d") if rev_cons.get("post_earning_return_1d") is not None else eps_cons.get("post_earning_return_1d")
+            ret_5d = rev_cons.get("post_earning_return_5d") if rev_cons.get("post_earning_return_5d") is not None else eps_cons.get("post_earning_return_5d")
+            surprise_label = None
+            if beat_status and surp_pct is not None:
+                surprise_label = f"{beat_status} ({'+' if surp_pct > 0 else ''}{surp_pct:.1f}%)"
+            elif beat_status:
+                surprise_label = beat_status
+
             series.append({
                 "period": k,
                 "period_key": k,
+                "quarter": k,
+                "surprise_label": surprise_label,
+                "surprise_pct": surp_pct,
+                "beat_miss_status": beat_status,
+                "return_1d_pct": ret_1d,
+                "return_5d_pct": ret_5d,
+                "eps_consensus": eps_cons.get("consensus_value"),
+                "eps_actual": eps_cons.get("actual_value"),
                 "fiscal_year": item["fiscal_year"],
                 "fiscal_quarter": item["fiscal_quarter"],
                 "calendar_quarter": cal_info["calendar_quarter"],
@@ -267,7 +313,9 @@ class FinancialService:
                 "is_estimate": is_est,
                 "revenue": rev,
                 "revenue_yoy_pct": rev_yoy,
+                "revenue_yoy": rev_yoy,
                 "operating_income": op_inc,
+                "op_income": op_inc,
                 "op_margin_pct": op_margin,
                 "net_income": net_inc,
                 "capex": capex,
@@ -323,6 +371,16 @@ class FinancialService:
                 "2022-Q4": "2022-12-16",
                 "2021-Q4": "2021-12-17",
                 "2020-Q4": "2020-12-18",
+            },
+            "ORCL": {
+                "2026-Q1": "2026-09-10",
+                "2026-Q4": "2026-06-10",
+                "2026-Q3": "2026-03-10",
+                "2026-Q2": "2025-12-10",
+                "2025-Q4": "2025-06-11",
+                "2025-Q3": "2025-03-10",
+                "2025-Q2": "2024-12-09",
+                "2025-Q1": "2024-09-09",
             },
             "NVDA": {
                 "2026-Q2": "2026-08-26",
@@ -636,6 +694,12 @@ class FinancialService:
                 "2024-Q4": "VMware 인수 완료 후 소프트웨어 인프라 매출 본격 반영 및 AI 네트워킹 수주 급증.",
                 "2023-Q4": "생성형 AI 인프라 투자 본격화에 따른 네트워킹 및 ASIC 반도체 수주 호조.",
             },
+            "ORCL": {
+                "2026-Q1": "OCI(오라클 클라우드 인프라스트럭처) 고성장과 멀티클라우드 파트너십 가속화로 분기 총매출 $19.35B 달성. 9월 10일 실적 발표(8-K) 및 9월 11일 10-Q 공시 완료. OCI AI 인프라 수주 잔고(RPO) $99B 돌파.",
+                "2026-Q4": "엔터프라이즈 AI 데이터베이스 클라우드 전환 가속화 및 연간 결산 달성.",
+                "2026-Q3": "멀티클라우드 데이터베이스 서비스 확대로 분기 매출 $13.3B 기록.",
+                "2026-Q2": "Gen 2 OCI 데이터센터 용량 증설 및 클라우드 서비스 매출 두 자릿수 성장."
+            },
             "NVDA": {
                 "2026-Q2": "Blackwell 아키텍처 대량 양산 및 출하 본격화. AI 데이터센터(Compute & Networking) 매출 $88.3B(91.8%)로 사상 최대 기록 경신.",
                 "2026-Q1": "차세대 AI 인프라 및 H200 수요 지속 견인. 분기 총매출 $81.6B 돌파, 영업이익률 65.6% 달성.",
@@ -701,6 +765,12 @@ class FinancialService:
                 "2025-Q4": "HBM3E 양산 본격화 및 데이터센터 매출 비중 과반 돌파. 분기 매출 $11.3B, 영업이익 $3.65B 달성.",
                 "2025-Q3": "AI 서버향 프리미엄 메모리 수요 견인으로 분기 매출 $9.3B 달성.",
                 "2024-Q4": "HBM3E 엔비디아 공급 및 데이터센터 업사이클 진입으로 연간 흑자 전환 ($7.75B)."
+            },
+            "SNDK": {
+                "2026-Q4": "AI 데이터센터향 64TB/128TB PCIe Gen5 eSSD 공급 급증 및 3D BiCS 낸드 고단화 수율 안정화로 분기 매출 $2.15B 달성.",
+                "2026-Q3": "하이퍼스케일러 AI 추론 클러스터용 QLC 엔터프라이즈 SSD 채택 확대로 분기 매출 $1.98B 기록.",
+                "2026-Q2": "AI 서버향 고용량 플래시 스토리지 수요 폭증 및 키옥시아 합작 팹 가동률 100% 회복.",
+                "2025-Q4": "웨스턴디지털(WDC)로부터 성공적 분사(Spin-off) 완료 후 단독 분기 결산. 낸드 메모리 업사이클 진입."
             }
         }
         return mda_notes.get(ticker, {}).get(period_key, f"{ticker} {period_key} 분기 경영진 실적 분석 및 정기 공시.")

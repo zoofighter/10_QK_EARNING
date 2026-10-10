@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed Layer and 34 Entity master records, plus initial sample earnings calendar entries.
+Seed Layer and 35 Entity master records, plus initial sample earnings calendar entries.
 """
 import sqlite3
 import sys
@@ -47,11 +47,12 @@ ENTITIES = [
     ("ASX", "ASE Technology Holding Co.", "ASE (日月光)", "L4_FOUNDRY", "NYSE", "0001732646", "TW", "SEC", "12"),
     ("AMKR", "Amkor Technology Inc.", "앰코 테크놀로지", "L4_FOUNDRY", "NASDAQ", "0001047537", "US", "SEC", "12"),
 
-    # L5_MEMORY (5)
+    # L5_MEMORY (6)
     ("000660.KS", "SK Hynix Inc.", "SK하이닉스", "L5_MEMORY", "KRX", None, "KR", "DART", "12"),
     ("005930.KS", "Samsung Electronics Co.", "삼성전자", "L5_MEMORY", "KRX", None, "KR", "DART", "12"),
     ("MU", "Micron Technology Inc.", "마이크론 테크놀로지", "L5_MEMORY", "NASDAQ", "0000723125", "US", "SEC", "08"),
     ("WDC", "Western Digital Corp.", "웨스턴 디지털", "L5_MEMORY", "NASDAQ", "0000106040", "US", "SEC", "06"),
+    ("SNDK", "SanDisk Corp.", "샌디스크", "L5_MEMORY", "NASDAQ", "0002023554", "US", "SEC", "06"),
     ("6600.T", "Kioxia Holdings Corp.", "키옥시아", "L5_MEMORY", "TSE", None, "JP", "MANUAL", "03"),
 
     # L6_OPTICAL (3)
@@ -59,7 +60,9 @@ ENTITIES = [
     ("COHR", "Coherent Corp.", "코히어런트", "L6_OPTICAL", "NYSE", "0000863894", "US", "SEC", "06"),
     ("ANET", "Arista Networks Inc.", "아리스타 네트웍스", "L6_OPTICAL", "NYSE", "0001596532", "US", "SEC", "12"),
 
-    # L7_INFRA (3)
+    # L7_INFRA (5)
+    ("OAI", "OpenAI Inc.", "오픈AI", "L7_INFRA", "UNLISTED", None, "US", "MANUAL", "12"),
+    ("ANTHROPIC", "Anthropic PBC", "앤트로픽", "L7_INFRA", "UNLISTED", None, "US", "MANUAL", "12"),
     ("SPACEX", "SpaceX / xAI", "스페이스X / xAI", "L7_INFRA", "UNLISTED", None, "US", "MANUAL", "12"),
     ("9984.T", "SoftBank Group Corp.", "소프트뱅크 그룹", "L7_INFRA", "TSE", None, "JP", "MANUAL", "03"),
     ("AAPL", "Apple Inc.", "애플", "L7_INFRA", "NASDAQ", "0000320193", "US", "SEC", "09"),
@@ -71,20 +74,24 @@ ENTITIES = [
     ("SBGSF", "Schneider Electric SE", "슈나이더 일렉트릭", "L8_POWER", "OTC", "0001158654", "FR", "SEC", "12"),
 ]
 
-# Sample upcoming earnings calendar to demonstrate calendar UI immediately
+# Verified earnings calendar dates synced with Yahoo Finance & market consensus
 CALENDAR_SEEDS = [
-    ("NVDA", "2026", "Q3", "2026-11-25", "17:00", "CONFIRMED"),
-    ("GOOGL", "2026", "Q3", "2026-10-01", "16:30", "COMPLETED"),
-    ("AMZN", "2026", "Q3", "2026-10-06", "17:30", "COMPLETED"),
-    ("META", "2026", "Q3", "2026-10-08", "17:00", "UPCOMING"),
-    ("MSFT", "2027", "Q1", "2026-10-15", "17:30", "UPCOMING"),
-    ("TSM", "2026", "Q3", "2026-10-16", "02:00", "UPCOMING"),
-    ("ASML", "2026", "Q3", "2026-10-21", "09:00", "UPCOMING"),
-    ("AAPL", "2026", "Q4", "2026-10-29", "17:00", "UPCOMING"),
-    ("MU", "2027", "Q1", "2026-12-17", "16:30", "UPCOMING"),
-    ("VRT", "2026", "Q3", "2026-10-23", "11:00", "UPCOMING"),
-    ("000660.KS", "2026", "Q3", "2026-10-24", "09:00", "UPCOMING"),
-    ("005930.KS", "2026", "Q3", "2026-10-31", "09:00", "UPCOMING"),
+    ("NVDA", "2026", "Q3", "2026-11-18", "17:00", "UPCOMING"),
+    ("GOOGL", "2026", "Q3", "2026-10-29", "17:00", "CONFIRMED"),
+    ("AMZN", "2026", "Q3", "2026-10-30", "17:00", "CONFIRMED"),
+    ("META", "2026", "Q3", "2026-10-29", "17:00", "CONFIRMED"),
+    ("MSFT", "2027", "Q1", "2026-10-29", "17:00", "CONFIRMED"),
+    ("TSM", "2026", "Q3", "2026-10-15", "09:00", "CONFIRMED"),
+    ("ASML", "2026", "Q3", "2026-10-14", "09:00", "CONFIRMED"),
+    ("AAPL", "2026", "Q4", "2026-11-03", "17:00", "CONFIRMED"),
+    ("MU", "2026", "Q2", "2026-12-24", "16:30", "UPCOMING"),
+    ("VRT", "2026", "Q3", "2026-10-21", "11:00", "CONFIRMED"),
+    ("WDC", "2027", "Q1", "2026-10-23", "16:30", "CONFIRMED"),
+    ("SNDK", "2027", "Q1", "2026-10-24", "16:30", "CONFIRMED"),
+    ("ORCL", "2027", "Q1", "2026-09-10", "17:00", "COMPLETED"),
+    ("ORCL", "2027", "Q2", "2026-12-11", "17:00", "UPCOMING"),
+    ("000660.KS", "2026", "Q3", "2026-10-27", "09:00", "CONFIRMED"),
+    ("005930.KS", "2026", "Q3", "2026-10-28", "09:00", "CONFIRMED"),
 ]
 
 def seed():

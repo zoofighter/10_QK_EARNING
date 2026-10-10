@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QK_EARNING × Memory Claude — 회사별 통합 인텔리전스 & 거시 수급 밸류체인</title>
-  <link rel="stylesheet" href="/css/style.css?v=20261008_2">
+  <title>SiliconPulse Terminal — AI 반도체 밸류체인 통합 인텔리전스 (MicroRadar × MacroFlow)</title>
+  <link rel="stylesheet" href="/css/style.css?v=20261009_1">
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Google Charts (Sankey Flow Diagram) -->
@@ -16,11 +16,12 @@
   <header class="navbar">
     <div style="display: flex; align-items: center; gap: 1.5rem;">
       <a href="#company/NVDA" class="brand" onclick="switchMainMode('company-hub')">
-        <div class="brand-badge">QK</div>
+        <div class="brand-badge" style="background: linear-gradient(135deg, #0284c7, #6366f1); color: #ffffff; font-weight: 800;">⚡</div>
         <div>
           <div class="brand-title" style="display: flex; align-items: center; gap: 0.5rem;">
-            <span>QK_EARNING</span>
-            <span style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600; background: rgba(6,182,212,0.12); padding: 0.15rem 0.5rem; border-radius: 4px; border: 1px solid rgba(6,182,212,0.25);">× Memory Claude</span>
+            <span style="font-size: 1.15rem; font-weight: 800; letter-spacing: -0.3px; background: linear-gradient(135deg, #f8fafc, #cbd5e1); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">SiliconPulse</span>
+            <span style="font-size: 0.7rem; color: #38bdf8; font-weight: 700; background: rgba(56,189,248,0.12); padding: 0.15rem 0.5rem; border-radius: 4px; border: 1px solid rgba(56,189,248,0.25); letter-spacing: 0.5px;">TERMINAL</span>
+            <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">MicroRadar × MacroFlow</span>
           </div>
         </div>
       </a>
@@ -28,10 +29,10 @@
       <!-- Global Navigation Mode Tabs -->
       <nav class="nav-tabs" style="margin-left: 0.5rem;">
         <button class="nav-tab-btn active" id="btn-mode-company" onclick="switchMainMode('company-hub')">
-          <span>🏢</span> 회사별 워크스페이스
+          <span>🏢</span> 회사별 인텔리전스 (MicroRadar)
         </button>
         <button class="nav-tab-btn" id="btn-mode-macro" onclick="switchMainMode('macro-hub')">
-          <span>🌐</span> 거시 밸류체인 & 슈퍼사이클
+          <span>🌐</span> 거시 수급 밸류체인 (MacroFlow)
         </button>
         <button class="nav-tab-btn" id="btn-mode-indicators" onclick="switchMainMode('indicators')">
           <span>📊</span> 선행지표 & 통관
@@ -251,27 +252,43 @@
           <!-- Financials Data Table -->
           <div class="card" style="padding: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-              <h3 style="font-size: 1.05rem; font-weight: 700;">📋 10-Q / 10-K 공시 연계 분기 재무제표 테이블</h3>
-              <span style="font-size: 0.8rem; color: var(--text-muted);">단위: 백만 달러 (M) 또는 표기 단위</span>
+              <div>
+                <h3 style="font-size: 1.05rem; font-weight: 700;">📋 10-Q / 10-K 공시 연계 분기 재무제표 테이블</h3>
+                <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">행을 클릭하면 하단에 해당 분기 경영진 실적 분석(MD&A) 요약이 표시됩니다.</p>
+              </div>
+              <span style="font-size: 0.8rem; color: var(--text-secondary);" id="quarterly-count-label">26개 분기 수집 완료</span>
             </div>
-            <div class="table-container" style="max-height: 480px; overflow-y: auto;">
-              <table class="data-table" id="table-company-financials">
+            <div class="table-container" style="max-height: 520px; overflow-y: auto;">
+              <table class="consensus-matrix-table" id="table-company-financials">
                 <thead>
                   <tr>
-                    <th>보고 분기</th>
-                    <th>총매출액</th>
-                    <th>YoY 성장률</th>
-                    <th>영업이익</th>
-                    <th>영업이익률 (OPM)</th>
-                    <th>순이익</th>
-                    <th>설비투자 (CapEx)</th>
-                    <th>기본 EPS</th>
+                    <th style="text-align: left;">분기</th>
+                    <th style="text-align: center;">보고서</th>
+                    <th style="text-align: center;">실적발표일</th>
+                    <th style="text-align: right;">매출액 (원통화 / YOY)</th>
+                    <th style="text-align: right;">영업이익 (OPM)</th>
+                    <th style="text-align: right;">순이익</th>
+                    <th style="text-align: right;">설비투자(CAPEX)</th>
+                    <th style="text-align: right;">데이터센터 매출 (비중)</th>
+                    <th style="text-align: center;">적용 환율 (FX)</th>
+                    <th style="text-align: center;">공시 원문</th>
                   </tr>
                 </thead>
                 <tbody id="tbody-company-financials">
-                  <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">데이터를 불러오는 중...</td></tr>
+                  <tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 2rem;">데이터를 불러오는 중...</td></tr>
                 </tbody>
               </table>
+            </div>
+
+            <!-- Selected Quarter MD&A Highlight Box -->
+            <div class="glass-panel" id="quarterly-mda-panel" style="margin-top: 1.25rem; border-left: 4px solid var(--accent-cyan, #06b6d4); background: rgba(15, 23, 42, 0.6); padding: 1.2rem; border-radius: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                <h4 style="font-size: 0.95rem; color: #fff; margin: 0; font-weight: 700;" id="mda-panel-title">🎙️ NVDA 경영진 실적 분석 (MD&A) & 주요 코멘트</h4>
+                <span class="status-pill" id="mda-panel-period">-</span>
+              </div>
+              <div style="font-size: 0.88rem; line-height: 1.7; color: var(--text-secondary); background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 6px;" id="mda-panel-content">
+                분기 행을 클릭하면 해당 분기의 경영진 분석(MD&A) 코멘트 및 핵심 포인트가 표시됩니다.
+              </div>
             </div>
           </div>
         </section>
@@ -331,13 +348,14 @@
                 <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem;">네이버, 야후파이낸스, 구글뉴스 수집 기사 및 중요도 스코어링</p>
               </div>
 
-              <!-- Source Filter -->
-              <div style="display: flex; gap: 0.5rem;">
+              <!-- Source Filter & Refresh -->
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
                 <button class="filter-btn active" onclick="filterNewsSource('')">전체</button>
                 <button class="filter-btn" onclick="filterNewsSource('naver')">네이버</button>
                 <button class="filter-btn" onclick="filterNewsSource('yahoo')">야후 파이낸스</button>
                 <button class="filter-btn" onclick="filterNewsSource('google_news')">구글 뉴스</button>
                 <button class="filter-btn" onclick="filterNewsSource('duckduckgo')">DuckDuckGo</button>
+                <button class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; display: flex; align-items: center; gap: 0.3rem;" onclick="refreshCompanyNews()">🔄 최신 수집</button>
               </div>
             </div>
 
@@ -395,7 +413,7 @@
             <div class="card" style="padding: 1.5rem;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h3 style="font-size: 1.05rem; font-weight: 700;">📜 $877B AI 메가 계약 연계 내역</h3>
-                <span class="badge" style="background: rgba(16,185,129,0.15); color: #34d399; padding: 0.2rem 0.5rem; border-radius: 4px;">Memory Claude</span>
+                <span class="badge" style="background: rgba(16,185,129,0.15); color: #34d399; padding: 0.2rem 0.5rem; border-radius: 4px;">MacroFlow Engine</span>
               </div>
               <div id="container-company-contracts" style="display: flex; flex-direction: column; gap: 0.75rem;">
                 <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">연계 계약을 조회하는 중...</div>
@@ -656,40 +674,134 @@
         </div>
       </div>
 
-      <!-- 관세청 10일 주기 섹션 -->
-      <div class="card" style="padding: 1.5rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <h3 style="font-size: 1.1rem; font-weight: 700;">🇰🇷 관세청 10일 주기 반도체 수출 통계 (HS 8542)</h3>
-          <button class="btn-secondary" onclick="fetchKrExportData()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">🔄 관세청 데이터 갱신</button>
+      <!-- 1. 글로벌 메모리 스팟 가격 (DRAM / NAND) -->
+      <div class="card" style="padding: 1.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.2rem;">💾 글로벌 메모리 스팟 가격 (DRAM / NAND)</h3>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">DDR5 / DDR4 16GB 모듈, NAND Flash 512Gb TLC, DXI 종합지수 실시간 현물가 및 시계열</span>
+          </div>
+          <div style="display: inline-flex; background: #0f172a; border-radius: 6px; padding: 2px; border: 1px solid #334155; gap: 2px;">
+            <button id="btn-spot-multi" onclick="setMemorySpotFilter('multi')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: #6366f1; color: white; font-weight: 700; transition: all 0.2s;">종합 비교</button>
+            <button id="btn-spot-ddr5" onclick="setMemorySpotFilter('SPOT_DRAM_DDR5_16GB')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">DDR5 16GB</button>
+            <button id="btn-spot-ddr4" onclick="setMemorySpotFilter('SPOT_DRAM_DDR4_16GB')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">DDR4 16GB</button>
+            <button id="btn-spot-nand" onclick="setMemorySpotFilter('SPOT_NAND_TLC_512GB')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">NAND 512Gb</button>
+            <button id="btn-spot-dxi" onclick="setMemorySpotFilter('INDEX_DXI')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">DXI 지수</button>
+          </div>
         </div>
-        <div style="height: 300px; position: relative; margin-bottom: 1.25rem;">
+
+        <!-- 메모리 스팟 최신 시세 요약 카드 그리드 -->
+        <div id="memory-spot-summary-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.25rem;">
+          <!-- 동적 렌더링 -->
+        </div>
+
+        <div style="height: 360px; position: relative;">
+          <canvas id="chart-memory-spot-legacy"></canvas>
+        </div>
+      </div>
+
+      <!-- 2. 관세청 10일 주기 반도체 수출 통계 (HS 8542) -->
+      <div class="card" style="padding: 1.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.25rem;">🇰🇷 관세청 10일 주기 반도체 수출 통계 (HS 8542)</h3>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">관세청 1~10일(상순), 1~20일(중순), 1~말일(하순) 잠정치 속보 및 공식 실측 통계</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn-secondary" onclick="toggleCustomsParserPanel()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; background: rgba(99,102,241,0.15); color: #818cf8; border-color: rgba(99,102,241,0.3);">📋 보도자료 파서</button>
+            <button class="btn-secondary" onclick="triggerCustomsAutoCollect()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; background: rgba(16,185,129,0.15); color: #34d399; border-color: rgba(16,185,129,0.3);">🤖 속보 자동 수집</button>
+            <button class="btn-secondary" onclick="fetchKrExportData()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">🔄 갱신</button>
+          </div>
+        </div>
+
+        <!-- 보도자료 파서 입력 패널 (접이식) -->
+        <div id="panel-kr-export-parser" style="display: none; margin-bottom: 1.25rem; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; padding: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.85rem; font-weight: 700; color: #a5b4fc;">📋 관세청 보도자료 / 속보 텍스트 자동 파싱</span>
+            <button class="btn-secondary" onclick="toggleCustomsParserPanel()" style="padding: 0.15rem 0.45rem; font-size: 0.75rem;">✕ 닫기</button>
+          </div>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+            관세청 공식 보도자료 본문이나 기사 내용, 또는 <strong>표 텍스트(예: <code>수출(8.1.~10.) 반도체 9,952 155.4</code>)</strong>를 그대로 붙여넣으면 연도/월/순 구분, 반도체 수출액, YoY 증감률을 자동으로 추출하여 즉시 DB에 등록합니다.
+          </p>
+          <textarea id="textarea-customs-press" rows="3" style="width: 100%; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; font-size: 0.8rem; font-family: monospace; resize: vertical;" placeholder="여기에 관세청 보도자료 텍스트를 붙여넣으세요... (예: 수출(8.1.~10.) 주요품목 반도체 9,952 155.4)"></textarea>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+            <div id="parser-result-msg" style="font-size: 0.8rem; color: #94a3b8;"></div>
+            <button class="btn-primary" onclick="submitCustomsPressParse()" style="padding: 0.35rem 0.9rem; font-size: 0.8rem;">🚀 파싱 & DB 등록</button>
+          </div>
+        </div>
+
+        <!-- 집계 방식 전환 토글 (누적치 vs 10일 순액) -->
+        <div style="display: align-items: center; justify-content: space-between; margin-bottom: 0.85rem; background: rgba(15, 23, 42, 0.5); padding: 0.45rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.8rem;">
+            <span style="color: var(--text-muted); font-weight: 600;">📊 집계 방식:</span>
+            <div style="display: inline-flex; background: #0f172a; border-radius: 6px; padding: 2px; border: 1px solid #334155;">
+              <button id="btn-kr-view-cumulative" onclick="setKrExportViewMode('cumulative')" style="padding: 0.3rem 0.75rem; font-size: 0.75rem; border-radius: 4px; border: none; cursor: pointer; font-weight: 700; background: #6366f1; color: white; transition: all 0.2s;">
+                📈 관세청 공식 발표 (누적치)
+              </button>
+              <button id="btn-kr-view-delta" onclick="setKrExportViewMode('delta')" style="padding: 0.3rem 0.75rem; font-size: 0.75rem; border-radius: 4px; border: none; cursor: pointer; font-weight: 600; background: transparent; color: #94a3b8; transition: all 0.2s;">
+                📊 10일 단위 순액 (구간별 실적)
+              </button>
+            </div>
+          </div>
+          <div id="kr-export-mode-desc" style="font-size: 0.75rem; color: #38bdf8; font-weight: 500;">
+            ℹ️ 관세청 보도자료 원문 기준: 1~10일, 1~20일(누적), 1~말일(월 전체) 공식치
+          </div>
+        </div>
+
+        <div style="height: 320px; position: relative; margin-bottom: 1.25rem;">
           <canvas id="chart-kr-export-legacy"></canvas>
         </div>
         <div class="table-container" style="max-height: 250px; overflow-y: auto;">
           <table class="data-table" id="table-kr-export-legacy">
             <thead>
-              <tr><th>기준일자</th><th>품목코드</th><th>품목명</th><th>수출액 ($M)</th><th>전년동기대비 (YoY)</th></tr>
+              <tr>
+                <th>기준일자</th>
+                <th>품목코드</th>
+                <th>품목명</th>
+                <th id="th-kr-export-val">수출액 (누적 $M)</th>
+                <th>전년동기대비 (YoY)</th>
+              </tr>
             </thead>
             <tbody id="tbody-kr-export-legacy"><tr><td colspan="5" style="text-align: center; color: var(--text-muted);">불러오는 중...</td></tr></tbody>
           </table>
         </div>
       </div>
 
-      <!-- 메모리 스팟 & GPU 렌탈 -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-        <div class="card" style="padding: 1.5rem;">
-          <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 1rem;">💾 글로벌 메모리 스팟 가격 (DRAM / NAND)</h3>
-          <div style="height: 260px; position: relative;">
-            <canvas id="chart-memory-spot-legacy"></canvas>
+      <!-- 3. GPU 클라우드 렌탈 스팟 시세 ($/hr) -->
+      <div class="card" style="padding: 1.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.2rem;">⚡ GPU 클라우드 렌탈 스팟 시세 ($/hr)</h3>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">글로벌 AI 클라우드 인프라(RunPod, Lambda, Vast.ai, CoreWeave) 실시간 스팟 임대료 및 시계열 트렌드</span>
+          </div>
+          <div style="display: inline-flex; background: #0f172a; border-radius: 6px; padding: 2px; border: 1px solid #334155; gap: 2px;">
+            <button id="btn-gpu-multi" onclick="setGpuRentalFilter('multi')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: #6366f1; color: white; font-weight: 700; transition: all 0.2s;">종합 비교</button>
+            <button id="btn-gpu-h100" onclick="setGpuRentalFilter('H100')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">H100 SXM</button>
+            <button id="btn-gpu-h200" onclick="setGpuRentalFilter('H200')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">H200 SXM</button>
+            <button id="btn-gpu-b200" onclick="setGpuRentalFilter('B200')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">B200 NVL</button>
+            <button id="btn-gpu-a100" onclick="setGpuRentalFilter('A100')" style="padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 4px; border: none; cursor: pointer; background: transparent; color: #94a3b8; transition: all 0.2s;">A100 SXM</button>
           </div>
         </div>
 
-        <div class="card" style="padding: 1.5rem;">
-          <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 1rem;">⚡ GPU 클라우드 렌탈 스팟 시세 ($/hr)</h3>
-          <div class="table-container" style="max-height: 260px; overflow-y: auto;">
+        <!-- GPU 렌탈 최신 시세 요약 카드 그리드 -->
+        <div id="gpu-rental-summary-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.25rem;">
+          <!-- 동적 렌더링 -->
+        </div>
+
+        <!-- GPU 렌탈 시계열 라인 차트 -->
+        <div style="height: 360px; position: relative;">
+          <canvas id="chart-gpu-rental-legacy"></canvas>
+        </div>
+
+        <!-- 클라우드 제공사별 실시간 견적 접이식 상세 -->
+        <details style="margin-top: 1rem; background: rgba(15, 23, 42, 0.5); border-radius: 8px; padding: 0.6rem 0.9rem; border: 1px solid rgba(255,255,255,0.06);" open>
+          <summary style="font-size: 0.8rem; color: #94a3b8; cursor: pointer; font-weight: 600; outline: none;">
+            🔍 CSP 제공사별 실시간 견적 (RunPod, Lambda, Vast.ai, CoreWeave) 상세
+          </summary>
+          <div class="table-container" style="max-height: 220px; overflow-y: auto; margin-top: 0.65rem;">
             <table class="data-table">
               <thead>
-                <tr><th>GPU 모델</th><th>클라우드 제공사</th><th>시간당 임대료</th><th>가용성</th></tr>
+                <tr><th>GPU 모델</th><th>클라우드 제공사</th><th>스팟 단가</th><th>온디맨드 정가</th><th>인터커넥트 / 리전</th><th>가용성</th></tr>
               </thead>
               <tbody id="tbody-gpu-rental-legacy">
                 <tr><td>H100 SXM 80GB</td><td>RunPod</td><td>$2.89/hr</td><td><span style="color:#34d399;">가용 (High)</span></td></tr>
@@ -699,7 +811,7 @@
               </tbody>
             </table>
           </div>
-        </div>
+        </details>
       </div>
     </div>
   </section>
@@ -802,6 +914,6 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=20261008_2"></script>
+  <script src="/js/app.js?v=20261008_3"></script>
 </body>
 </html>

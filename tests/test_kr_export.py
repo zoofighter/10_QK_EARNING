@@ -11,9 +11,9 @@ class TestKoreaExportCollector(unittest.TestCase):
         self.assertGreater(len(history), 0)
         self.assertGreater(history[-1]["value"], 0)
 
-        # Test individual 10day report add
+        # Test individual 10day report add (use 2024 to avoid overwriting 2026 facts)
         res = collector.add_10day_report(
-            year=2026,
+            year=2024,
             month=9,
             period="중순",
             semi_export_amt=4250,
@@ -40,5 +40,20 @@ class TestKoreaExportCollector(unittest.TestCase):
             history = collector.get_export_history(indicator_type="KR_TOTAL_EXPORT_AMT", limit=5)
             self.assertGreater(len(history), 0)
 
+    def test_customs_press_release_parser(self):
+        collector = KoreaExportCollector()
+        sample_text = """
+        수출(8.1.~10.)
+        주요품목 금액 증감률
+        반도체 9,952 155.4
+        """
+        res = collector.parse_and_save_press_release(sample_text)
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["parsed"]["semi_export_amt"], 9952.0)
+        self.assertEqual(res["parsed"]["semi_yoy_pct"], 155.4)
+        self.assertEqual(res["parsed"]["month"], 8)
+        self.assertEqual(res["parsed"]["period"], "상순")
+
 if __name__ == "__main__":
     unittest.main()
+
