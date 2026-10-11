@@ -1624,9 +1624,19 @@ def get_company_full_profile(ticker):
             ]
         })
 
+        # 7. Unlisted / Private Entity Verification
+        is_unlisted = (
+            entity["ticker"].upper() in ("OAI", "ANTHROPIC", "SPACEX", "CRWV")
+            or entity.get("exchange") == "UNLISTED"
+            or entity.get("data_source") == "UNLISTED"
+        )
+        financial_summary["is_estimate"] = is_unlisted
+
         return jsonify({
             "status": "success",
             "entity": entity,
+            "is_unlisted": is_unlisted,
+            "unlisted_note": "비상장 기업 추정치 (The Information / Bloomberg / 지분법 공시 기반)" if is_unlisted else None,
             "stock": stock_info,
             "calendar": calendar_info,
             "financials": financial_summary,
@@ -2032,6 +2042,28 @@ def get_2026_ledger():
         order=order,
         limit=limit,
         offset=offset
+    )
+    return jsonify(result)
+
+
+@api_bp.route("/companies/<ticker>/signals/recent-monthly", methods=["GET"])
+def get_company_recent_monthly_signals(ticker):
+    """
+    Return recent monthly (30-day) high-impact signals for Company Snapshot Timeline.
+    Applies importance scoring and adaptive 60-day fallback window.
+    """
+    from app.services.ledger_service import LedgerService
+    days = int(request.args.get("days", 30))
+    min_score = int(request.args.get("min_score", 30))
+    limit = int(request.args.get("limit", 10))
+    include_fallback = request.args.get("include_fallback", "true").lower() in ("true", "1", "yes")
+
+    result = LedgerService.get_recent_monthly_signals(
+        ticker=ticker,
+        days=days,
+        min_score=min_score,
+        limit=limit,
+        include_fallback=include_fallback
     )
     return jsonify(result)
 

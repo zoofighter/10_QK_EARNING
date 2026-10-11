@@ -266,14 +266,17 @@ class FinancialService:
             # If an actual SEC filing (10-Q / 10-K / 20-F) exists in DB, it is confirmed historical data
             has_filing = bool(f_info.get("id"))
 
+            # Check if this company is an unlisted private entity (OpenAI, Anthropic, SpaceX, etc.)
+            is_unlisted = ticker.upper() in ("OAI", "ANTHROPIC", "SPACEX", "CRWV") or (entity and entity.get("data_source") == "UNLISTED")
+
             # Determine whether this quarter's result is an estimate (추정):
-            # 1. If an official filing is already recorded in DB, it is confirmed actuals (not an estimate).
-            # 2. If release date is known, check against current date:
-            #    - Future date (> today): not released yet -> estimate (True).
-            #    - Past or today (<= today): already released -> actuals (False).
-            # 3. Fallback: if rel_date is missing, compare calendar year against current year.
+            # 1. If unlisted entity -> 100% all quarters are estimates from press/investor IR
+            # 2. If an official filing is already recorded in DB, it is confirmed actuals (not an estimate).
+            # 3. If release date is known, check against current date:
             today_str = datetime.now().strftime("%Y-%m-%d")
-            if has_filing:
+            if is_unlisted:
+                is_est = True
+            elif has_filing:
                 is_est = False
             elif rel_date:
                 is_est = rel_date > today_str
@@ -336,10 +339,14 @@ class FinancialService:
                 "original_revenue_str": orig_rev_str
             })
 
+        is_unlisted_entity = ticker.upper() in ("OAI", "ANTHROPIC", "SPACEX", "CRWV") or (entity and entity.get("data_source") == "UNLISTED")
+
         return {
             "status": "success",
             "ticker": ticker,
             "entity": dict(entity) if entity else {},
+            "is_unlisted": is_unlisted_entity,
+            "unlisted_note": "비상장 기업 추정치 (The Information / Bloomberg / 지분법 투자 공시 기반)" if is_unlisted_entity else None,
             "fiscal_year_end": str(fy_end).zfill(2),
             "fiscal_year_end_guide": fy_guide,
             "fx_info": fx_info,

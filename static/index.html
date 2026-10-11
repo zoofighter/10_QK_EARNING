@@ -244,9 +244,10 @@
               <div>
                 <h3 style="font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
                   <span>📡</span>
-                  <span>2026 핵심 시그널 & 실시간 𝕏 레이더 타임라인</span>
+                  <span id="company-ledger-widget-title">최근 1달 핵심 시그널 & 실시간 𝕏 레이더</span>
+                  <span id="company-ledger-fallback-badge" style="display: none; font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 4px; font-weight: 600;">60일 확장</span>
                 </h3>
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">해당 기업의 2026년 계약, 캐파 변곡점, 기술 이정표 및 인플루언서 레이더 시그널</p>
+                <p id="company-ledger-widget-subtitle" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">최근 30일간의 중대 계약, 자본 유치, 캐파 변곡점 및 고신뢰도 레이더 시그널 선별</p>
               </div>
               <button class="btn-secondary" id="btn-jump-to-ledger" onclick="jumpToLedgerForCurrentCompany()" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; padding: 0.4rem 0.8rem; background: rgba(56,189,248,0.12); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); border-radius: 6px; cursor: pointer;">
                 <span>전체 8열 원장 보기</span>

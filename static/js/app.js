@@ -413,10 +413,24 @@ async function loadCompanyWorkspace(ticker) {
       layerBadge.style.borderColor = color;
       layerBadge.style.background = `${color}20`;
     }
+    const isUnlisted = res.is_unlisted || (entity && (['OAI', 'ANTHROPIC', 'SPACEX', 'CRWV'].includes(entity.ticker.toUpperCase()) || entity.exchange === 'UNLISTED'));
+
     if (countryTag) countryTag.textContent = `${COUNTRY_FLAGS[entity.country] || '🌐'} ${entity.country}`;
-    if (exchangeTag) exchangeTag.textContent = entity.exchange || '거래소';
+    if (exchangeTag) {
+      if (isUnlisted) {
+        exchangeTag.innerHTML = `<span style="color:#fbbf24; font-weight:700;">비상장 (사모)</span>`;
+      } else {
+        exchangeTag.textContent = entity.exchange || '거래소';
+      }
+    }
     if (tickerTag) tickerTag.textContent = `티커: ${entity.ticker}`;
-    if (cikTag) cikTag.textContent = `CIK: ${entity.sec_cik || 'N/A'}`;
+    if (cikTag) {
+      if (isUnlisted) {
+        cikTag.innerHTML = `<span style="color:#fbbf24;">공시 면제 (사모)</span>`;
+      } else {
+        cikTag.textContent = `CIK: ${entity.sec_cik || 'N/A'}`;
+      }
+    }
     if (fiscalTag) fiscalTag.textContent = `결산월: ${entity.fiscal_year_end || '12'}월`;
 
     // Price Box
@@ -424,29 +438,39 @@ async function loadCompanyWorkspace(ticker) {
     const prChange = document.getElementById('company-price-change');
     const prDate = document.getElementById('company-price-date');
 
-    if (curPrice) curPrice.textContent = stock.price ? `$${stock.price.toFixed(2)}` : '-';
+    if (curPrice) curPrice.textContent = stock.price ? `$${stock.price.toFixed(2)}` : (isUnlisted ? '비상장 (사모)' : '-');
     if (prChange) {
       const isUp = (stock.change >= 0);
       prChange.className = `profile-price-change ${isUp ? 'up' : 'down'}`;
-      prChange.innerHTML = `
+      prChange.innerHTML = isUnlisted
+        ? `<span style="color:var(--text-muted); font-size:0.75rem;">주식시장 미상장</span>`
+        : `
         <span>${isUp ? '▲' : '▼'} ${isUp ? '+' : ''}${stock.change_pct}%</span>
         <span style="font-size: 0.78rem; opacity: 0.8;">(${isUp ? '+' : ''}${stock.change})</span>
       `;
     }
-    if (prDate) prDate.textContent = stock.date ? `기준: ${stock.date}` : '';
+    if (prDate) prDate.textContent = stock.date ? `기준: ${stock.date}` : (isUnlisted ? '사모 펀딩 라운드 기준' : '');
 
     // 2. 4 Quick KPI Summary Cards
     const ddayVal = document.getElementById('kpi-dday-val');
     const ddayDate = document.getElementById('kpi-dday-date');
-    if (ddayVal) ddayVal.textContent = calendar.d_day_label || '-';
+    if (ddayVal) ddayVal.textContent = isUnlisted ? '공시 면제' : (calendar.d_day_label || '-');
     if (ddayDate) {
-      ddayDate.textContent = calendar.expected_date ?
-        `${calendar.expected_date} ${calendar.call_time_et || ''}` : '일정 미정';
+      ddayDate.textContent = isUnlisted
+        ? '비상장 기업 (언론/IR 비정기 추정)'
+        : (calendar.expected_date ? `${calendar.expected_date} ${calendar.call_time_et || ''}` : '일정 미정');
     }
 
     const revVal = document.getElementById('kpi-rev-val');
     const revYoY = document.getElementById('kpi-rev-yoy');
-    if (revVal) revVal.textContent = financials.revenue ? `$${Number(financials.revenue).toLocaleString()}M` : '-';
+    if (revVal) {
+      if (financials.revenue) {
+        const estTag = isUnlisted ? ` <span style="font-size:0.72rem; color:#fbbf24; background:rgba(245,158,11,0.18); padding:0.12rem 0.38rem; border-radius:4px; font-weight:700;">(추정)</span>` : '';
+        revVal.innerHTML = `$${Number(financials.revenue).toLocaleString()}M${estTag}`;
+      } else {
+        revVal.textContent = '-';
+      }
+    }
     if (revYoY) {
       if (financials.revenue_yoy !== null && financials.revenue_yoy !== undefined) {
         revYoY.textContent = `YoY ${financials.revenue_yoy >= 0 ? '+' : ''}${financials.revenue_yoy}%`;
@@ -458,8 +482,14 @@ async function loadCompanyWorkspace(ticker) {
 
     const opmVal = document.getElementById('kpi-opm-val');
     const opInc = document.getElementById('kpi-op-income');
-    if (opmVal) opmVal.textContent = financials.op_margin_pct ? `${financials.op_margin_pct}%` : '-';
-    if (opInc) opInc.textContent = financials.op_income ? `영업이익 $${Number(financials.op_income).toLocaleString()}M` : '-';
+    if (opmVal) {
+      const estTag = isUnlisted ? ` <span style="font-size:0.72rem; color:#fbbf24;">(추정)</span>` : '';
+      opmVal.innerHTML = financials.op_margin_pct ? `${financials.op_margin_pct}%${estTag}` : '-';
+    }
+    if (opInc) {
+      const estTag = isUnlisted ? ` <span style="font-size:0.72rem; color:#fbbf24; font-weight:600;">(추정)</span>` : '';
+      opInc.innerHTML = financials.op_income ? `영업이익 $${Number(financials.op_income).toLocaleString()}M${estTag}` : '-';
+    }
 
     const targetVal = document.getElementById('kpi-target-val');
     const targetUpside = document.getElementById('kpi-target-upside');
@@ -669,14 +699,19 @@ async function loadSubTabFinancials(ticker) {
     currentQuarterlySeries = res.series || res.quarters || [];
     currentQuarterlyEntity = res.entity || { ticker: ticker, name_ko: res.name || ticker };
 
+    const isUnlisted = res.is_unlisted || ['OAI', 'ANTHROPIC', 'SPACEX', 'CRWV'].includes(ticker.toUpperCase()) || (currentQuarterlyEntity && currentQuarterlyEntity.exchange === 'UNLISTED');
+
     const countLabel = document.getElementById("quarterly-count-label");
     if (countLabel) {
       const fyGuide = res.fiscal_year_end_guide ? ` | <span style="color:var(--accent-emerald, #10b981);">📅 ${res.fiscal_year_end_guide}</span>` : '';
-      countLabel.innerHTML = `<span style="color:var(--accent-cyan, #06b6d4); font-weight:600;">${currentQuarterlySeries.length}개 분기 수집 완료</span>${fyGuide}`;
+      const unlistedBadge = isUnlisted
+        ? ` | <span style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.45); padding:0.18rem 0.55rem; border-radius:4px; font-weight:700; font-size:0.76rem;">⚠️ 비상장 기업 추정치 (The Information / Bloomberg / 지분법 공시 기반)</span>`
+        : '';
+      countLabel.innerHTML = `<span style="color:var(--accent-cyan, #06b6d4); font-weight:600;">${currentQuarterlySeries.length}개 분기 수집 완료</span>${fyGuide}${unlistedBadge}`;
     }
 
     // Render Table in reverse chronological order (latest at top)
-    renderQuarterlyTable(currentQuarterlySeries, ticker);
+    renderQuarterlyTable(currentQuarterlySeries, ticker, isUnlisted);
 
     // Default select latest quarter for MD&A highlight
     if (currentQuarterlySeries.length > 0) {
@@ -695,6 +730,10 @@ async function loadSubTabFinancials(ticker) {
       const opData = chronQuarters.map(q => (q.operating_income !== undefined ? q.operating_income : q.op_income) || 0);
       const capexData = chronQuarters.map(q => q.capex || 0);
 
+      const revLabel = isUnlisted ? '매출액 (추정 $M)' : '매출액 ($M)';
+      const opLabel = isUnlisted ? '영업이익 (추정 $M)' : '영업이익 ($M)';
+      const capexLabel = isUnlisted ? '설비투자 CapEx (추정 $M)' : '설비투자 CapEx ($M)';
+
       state.charts['financialsCombo'] = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -702,16 +741,16 @@ async function loadSubTabFinancials(ticker) {
           datasets: [
             {
               type: 'bar',
-              label: '매출액 ($M)',
+              label: revLabel,
               data: revData,
-              backgroundColor: 'rgba(99, 102, 241, 0.7)',
-              borderColor: '#6366f1',
+              backgroundColor: isUnlisted ? 'rgba(245, 158, 11, 0.72)' : 'rgba(99, 102, 241, 0.7)',
+              borderColor: isUnlisted ? '#f59e0b' : '#6366f1',
               borderWidth: 1,
               borderRadius: 4
             },
             {
               type: 'bar',
-              label: '영업이익 ($M)',
+              label: opLabel,
               data: opData,
               backgroundColor: 'rgba(16, 185, 129, 0.7)',
               borderColor: '#10b981',
@@ -720,7 +759,7 @@ async function loadSubTabFinancials(ticker) {
             },
             {
               type: 'line',
-              label: '설비투자 CapEx ($M)',
+              label: capexLabel,
               data: capexData,
               borderColor: '#f59e0b',
               backgroundColor: '#f59e0b',
@@ -742,7 +781,7 @@ async function loadSubTabFinancials(ticker) {
             tooltip: {
               backgroundColor: 'rgba(15, 23, 42, 0.95)',
               callbacks: {
-                label: ctx => ` ${ctx.dataset.label}: $${Number(ctx.raw).toLocaleString()}M`
+                label: ctx => ` ${ctx.dataset.label}: $${Number(ctx.raw).toLocaleString()}M${isUnlisted ? ' (비상장 추정치)' : ''}`
               }
             }
           },
@@ -764,7 +803,7 @@ async function loadSubTabFinancials(ticker) {
   }
 }
 
-function renderQuarterlyTable(series, ticker) {
+function renderQuarterlyTable(series, ticker, isUnlisted = false) {
   const tbody = document.getElementById('tbody-company-financials');
   if (!tbody) return;
 
@@ -789,9 +828,11 @@ function renderQuarterlyTable(series, ticker) {
       ? `<span style="font-size:0.75rem; color:${yoy >= 0 ? 'var(--accent-emerald, #10b981)' : 'var(--accent-rose, #f43f5e)'}; margin-left:0.4rem;">(${yoy > 0 ? '+' : ''}${Number(yoy).toFixed(1)}%)</span>`
       : "";
 
-    const filingBtn = row.filing_id
-      ? `<button class="btn" style="padding:0.2rem 0.55rem; font-size:0.74rem;" onclick="event.stopPropagation(); viewFilingRawText(${row.filing_id}, '${row.filing_type || '10-Q'}', '${row.report_date || row.filed_date || ''}')">📑 원문</button>`
-      : `<span style="color:var(--text-muted); font-size:0.75rem;">-</span>`;
+    const filingBtn = isUnlisted
+      ? `<span style="color:#fbbf24; font-size:0.72rem; font-weight:600; padding:0.15rem 0.45rem; background:rgba(245,158,11,0.12); border-radius:4px; border:1px dashed rgba(245,158,11,0.35);">공시 면제</span>`
+      : (row.filing_id
+        ? `<button class="btn" style="padding:0.2rem 0.55rem; font-size:0.74rem;" onclick="event.stopPropagation(); viewFilingRawText(${row.filing_id}, '${row.filing_type || '10-Q'}', '${row.report_date || row.filed_date || ''}')">📑 원문</button>`
+        : `<span style="color:var(--text-muted); font-size:0.75rem;">-</span>`);
 
     const dcText = row.revenue_datacenter
       ? `$${(row.revenue_datacenter / 1000).toFixed(1)}B <span style="font-size:0.75rem; color:#A78BFA;">(${row.revenue_datacenter_pct ? Number(row.revenue_datacenter_pct).toFixed(0) : '-'}%)</span>`
@@ -808,9 +849,13 @@ function renderQuarterlyTable(series, ticker) {
     const opPeriod = row.operating_period
       ? `<div style="font-size:0.72rem; color:var(--accent-cyan); font-weight:normal; margin-top:0.15rem;">[${row.operating_period}]</div>`
       : "";
-    const estBadge = row.is_estimate
-      ? `<span class="layer-tag L4" style="font-size:0.65rem; padding:0.1rem 0.35rem; margin-left:0.3rem;">추정(E)</span>`
+    const estBadge = (row.is_estimate || isUnlisted)
+      ? `<span class="layer-tag L4" style="font-size:0.65rem; padding:0.12rem 0.42rem; margin-left:0.35rem; background:rgba(245,158,11,0.22); color:#fbbf24; border:1px solid rgba(245,158,11,0.45); font-weight:700;">[추정]</span>`
       : "";
+
+    const filingTypeBadge = isUnlisted
+      ? `<span class="filing-badge" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.35); font-size:0.72rem; padding:0.2rem 0.45rem;">언론/IR 추정</span>`
+      : `<span class="filing-badge filing-${row.filing_type || '10-Q'}">${row.filing_type || '10-Q'}</span>`;
 
     const revVal = row.revenue ? `$${(row.revenue / 1000).toFixed(1)}B` : '-';
     const opRaw = row.operating_income !== undefined && row.operating_income !== null ? row.operating_income : row.op_income;
@@ -822,8 +867,8 @@ function renderQuarterlyTable(series, ticker) {
     return `
       <tr onclick="selectQuarterRow(${idx})" style="cursor: pointer; transition: background 0.15s ease;" id="quarter-row-${idx}">
         <td><strong>${periodLabel}</strong>${estBadge}${opPeriod}</td>
-        <td style="text-align: center;"><span class="filing-badge filing-${row.filing_type || '10-Q'}">${row.filing_type || '10-Q'}</span></td>
-        <td style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">${row.report_date || row.filed_date || '-'}</td>
+        <td style="text-align: center;">${filingTypeBadge}</td>
+        <td style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">${row.report_date || row.filed_date || (isUnlisted ? '보도/추정' : '-')}</td>
         <td style="text-align: right; font-weight: 600;">${revVal} ${yoyBadge}${origRevNote}</td>
         <td style="text-align: right; color: var(--accent-cyan); font-weight: 500;">${opVal} <span style="font-size:0.75rem; color:var(--text-muted);">(${opmStr})</span></td>
         <td style="text-align: right;">${netVal}</td>
@@ -854,11 +899,39 @@ function selectQuarterRow(index) {
   const contentEl = document.getElementById("mda-panel-content");
   const ticker = (currentQuarterlyEntity && currentQuarterlyEntity.ticker) || state.currentTicker;
   const tickerName = (currentQuarterlyEntity && currentQuarterlyEntity.name_ko) || ticker;
+  const isUnlisted = ['OAI', 'ANTHROPIC', 'SPACEX', 'CRWV'].includes(ticker.toUpperCase()) || (currentQuarterlyEntity && currentQuarterlyEntity.exchange === 'UNLISTED');
 
-  if (titleEl) titleEl.innerHTML = `🎙️ ${tickerName} (${ticker}) ${periodLabel} ${item.filing_type || '10-Q'} 경영진 실적 분석 (MD&A) & 주요 코멘트`;
-  if (periodEl) periodEl.textContent = `${periodLabel} ${item.filing_type || '10-Q'}`;
+  if (titleEl) {
+    if (isUnlisted) {
+      titleEl.innerHTML = `🎙️ ${tickerName} (${ticker}) ${periodLabel} [비상장 사모 추정] 주요 취재 및 투자사 IR 코멘트`;
+    } else {
+      titleEl.innerHTML = `🎙️ ${tickerName} (${ticker}) ${periodLabel} ${item.filing_type || '10-Q'} 경영진 실적 분석 (MD&A) & 주요 코멘트`;
+    }
+  }
+  if (periodEl) {
+    if (isUnlisted) {
+      periodEl.innerHTML = `${periodLabel} <span style="color:#fbbf24; font-weight:700;">[비상장 추정치]</span>`;
+    } else {
+      periodEl.textContent = `${periodLabel} ${item.filing_type || '10-Q'}`;
+    }
+  }
   if (contentEl) {
-    contentEl.textContent = item.mda_summary || `${periodLabel} 분기 공시 세부 경영진 분석 리포트입니다.`;
+    if (isUnlisted) {
+      contentEl.innerHTML = `
+        <div style="padding: 1rem 1.25rem; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; color: #fde68a; line-height: 1.6;">
+          <div style="font-weight: 700; color: #fbbf24; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>⚠️</span> <span>비상장 벤처 기업 공시 면제 안내 (추정치 근거)</span>
+          </div>
+          <div>
+            <strong>${tickerName} (${ticker})</strong>는 SEC 정식 상장 공시(10-Q, 10-K) 의무가 면제된 비상장 프라이빗 기업입니다.<br>
+            위 표시된 ${periodLabel} 실적은 <strong>The Information, Bloomberg, Wall Street Journal의 유출 취재</strong> 및 대주주·파트너사(Microsoft, Amazon, Google 등)의 SEC 공시(지분법 손익 주석)를 기반으로 역산한 <strong>시장 추정치(Private Estimates)</strong>입니다.
+          </div>
+          ${item.mda_summary ? `<div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed rgba(245,158,11,0.3); color: #cbd5e1;"><strong>주요 보도 내용:</strong> ${item.mda_summary}</div>` : ''}
+        </div>
+      `;
+    } else {
+      contentEl.textContent = item.mda_summary || `${periodLabel} 분기 공시 세부 경영진 분석 리포트입니다.`;
+    }
   }
 }
 
@@ -2751,31 +2824,82 @@ async function loadCompanyLedgerWidget(ticker) {
   const container = document.getElementById('company-ledger-timeline-container');
   if (!container) return;
 
-  container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.85rem;">2026 시그널 데이터를 불러오는 중...</div>';
+  const subtitleEl = document.getElementById('company-ledger-widget-subtitle');
+  const fallbackBadge = document.getElementById('company-ledger-fallback-badge');
+
+  container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.85rem;">최근 핵심 시그널 데이터를 분석·선별 중...</div>';
 
   try {
-    const res = await fetch(`/api/ledger/2026?ticker=${ticker}&limit=8&order=desc`).then(r => r.json());
-    if (res.status !== 'success' || !res.events || res.events.length === 0) {
+    const res = await fetch(`/api/companies/${ticker}/signals/recent-monthly?days=30&min_score=30&limit=10&include_fallback=true`).then(r => r.json());
+    if (res.status !== 'success' || !res.signals || res.signals.length === 0) {
+      if (subtitleEl) subtitleEl.textContent = '등록된 시그널 내역이 없습니다.';
+      if (fallbackBadge) fallbackBadge.style.display = 'none';
+
       container.innerHTML = `
         <div style="text-align: center; color: var(--text-muted); padding: 2rem; font-size: 0.85rem; background: rgba(0,0,0,0.15); border-radius: 6px;">
-          ${ticker} 기업에 등록된 2026년 시그널 원장 내역이 없습니다.
+          ${ticker} 기업에 등록된 시그널 원장 내역이 없습니다.
         </div>
       `;
       return;
     }
 
-    const cardsHtml = res.events.map(ev => {
-      const confBadge = renderConfidenceBadge(ev.confidence, ev.confidence_code);
-      const rawText = ev.content || ev.raw_event || '';
-      const targetTags = renderTargetIdentifiedBadges(ev.target || ev.target_identified);
-      const metricTags = renderMetricsConditionBadges(ev.metrics || ev.metrics_condition);
+    // Update window subtitles & fallback indicator
+    if (res.window) {
+      const w = res.window;
+      if (subtitleEl) {
+        subtitleEl.innerHTML = `📅 기준 윈도우: <strong style="color:#e2e8f0;">${w.start_date} ~ ${w.end_date}</strong> · 전체 ${w.total_company_events}건 중 <strong style="color:#38bdf8;">상위 ${res.signals.length}건 선별 표출</strong>`;
+      }
+      if (fallbackBadge) {
+        if (w.is_fallback_expanded) {
+          fallbackBadge.style.display = 'inline-block';
+          fallbackBadge.textContent = '기간 확장 (10건 완충)';
+          fallbackBadge.title = '최근 30일 내 고임팩트 시그널이 부족하여 직전 기간 데이터로 자동 확장하여 10건을 채웠습니다.';
+        } else {
+          fallbackBadge.style.display = 'none';
+        }
+      }
+    }
+
+    const cardsHtml = res.signals.map(ev => {
+      const confBadge = renderConfidenceBadge(ev.confidence, ev.confidence);
+      const rawText = ev.content || ev.raw_content || '';
+      const targetTags = renderTargetIdentifiedBadges(ev.target);
+      const metricTags = renderMetricsConditionBadges(ev.metrics);
+
+      // Card Highlight based on Importance Badge
+      let cardStyle = '';
+      let badgeHtml = '';
+
+      if (ev.badge_type === 'MEGA_DEAL') {
+        cardStyle = 'border: 1px solid rgba(245, 158, 11, 0.45); background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(255, 255, 255, 0.02)); box-shadow: 0 0 12px rgba(245, 158, 11, 0.1);';
+        badgeHtml = `<span style="background: rgba(245, 158, 11, 0.22); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.5); font-weight: 700; font-size: 0.72rem; padding: 0.12rem 0.45rem; border-radius: 4px;">🔥 MEGA DEAL</span>`;
+      } else if (ev.badge_type === 'INFLECTION') {
+        cardStyle = 'border: 1px solid rgba(6, 182, 212, 0.35); background: linear-gradient(135deg, rgba(6, 182, 212, 0.06), rgba(255, 255, 255, 0.02));';
+        badgeHtml = `<span style="background: rgba(6, 182, 212, 0.18); color: #38bdf8; border: 1px solid rgba(6, 182, 212, 0.4); font-weight: 700; font-size: 0.72rem; padding: 0.12rem 0.45rem; border-radius: 4px;">⚡ 핵심 변곡점</span>`;
+      } else if (ev.badge_type === 'OFFICIAL') {
+        badgeHtml = `<span style="background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); font-weight: 700; font-size: 0.72rem; padding: 0.12rem 0.45rem; border-radius: 4px;">📑 공식 공시</span>`;
+      } else if (ev.badge_type === 'X_RADAR') {
+        badgeHtml = `<span style="background: rgba(147, 51, 234, 0.18); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.4); font-weight: 700; font-size: 0.72rem; padding: 0.12rem 0.45rem; border-radius: 4px;">𝕏 단독 레이더</span>`;
+      } else if (ev.badge_type === 'TREND') {
+        badgeHtml = `<span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-weight: 600; font-size: 0.72rem; padding: 0.12rem 0.45rem; border-radius: 4px;">💡 업계 동향</span>`;
+      } else if (ev.badge_type === 'RADAR') {
+        badgeHtml = `<span style="background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); font-weight: 500; font-size: 0.72rem; padding: 0.12rem 0.45rem; border-radius: 4px;">💬 소셜 레이더</span>`;
+      } else {
+        badgeHtml = `<span class="badge-event-type" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;">${escapeHtml(ev.badge_label || ev.event_type || '주요 시그널')}</span>`;
+      }
+
+      const scoreColor = ev.importance_score >= 70 ? '#fbbf24' : (ev.importance_score >= 50 ? '#38bdf8' : '#94a3b8');
 
       return `
-        <div class="mini-ledger-card">
+        <div class="mini-ledger-card" style="${cardStyle}">
           <div class="mini-ledger-header">
-            <span class="mini-ledger-date">${escapeHtml(ev.date || '-')}</span>
+            <span class="mini-ledger-date">
+              ${escapeHtml(ev.date || '-')}
+              <span style="color: #94a3b8; font-size: 0.72rem; font-weight: normal; margin-left: 0.3rem;">[${ev.days_ago_label || ''}]</span>
+            </span>
             <div style="display: flex; align-items: center; gap: 0.4rem;">
-              <span class="badge-event-type" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;">${escapeHtml(ev.event_type || '시그널')}</span>
+              ${badgeHtml}
+              <span style="font-size: 0.68rem; color: ${scoreColor}; font-weight: 600; background: rgba(255,255,255,0.06); padding: 0.1rem 0.35rem; border-radius: 3px;" title="중요도 산출 점수: 100점 만점">점수 ${ev.importance_score}</span>
               ${confBadge}
             </div>
           </div>
