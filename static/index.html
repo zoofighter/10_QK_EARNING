@@ -34,6 +34,9 @@
         <button class="nav-tab-btn" id="btn-mode-macro" onclick="switchMainMode('macro-hub')">
           <span>🌐</span> 거시 수급 밸류체인 (MacroFlow)
         </button>
+        <button class="nav-tab-btn" id="btn-mode-ledger" onclick="switchMainMode('ledger-hub')">
+          <span>📡</span> 36개사 연간 원장 (8열 Full Matrix)
+        </button>
         <button class="nav-tab-btn" id="btn-mode-indicators" onclick="switchMainMode('indicators')">
           <span>📊</span> 선행지표 & 통관
         </button>
@@ -232,6 +235,26 @@
                   <!-- Dynamic rows -->
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Bottom: 📡 2026 핵심 변곡점 & 실시간 𝕏 레이더 미니 위젯 -->
+          <div class="card" style="padding: 1.5rem; margin-top: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <div>
+                <h3 style="font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>📡</span>
+                  <span>2026 핵심 시그널 & 실시간 𝕏 레이더 타임라인</span>
+                </h3>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">해당 기업의 2026년 계약, 캐파 변곡점, 기술 이정표 및 인플루언서 레이더 시그널</p>
+              </div>
+              <button class="btn-secondary" id="btn-jump-to-ledger" onclick="jumpToLedgerForCurrentCompany()" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; padding: 0.4rem 0.8rem; background: rgba(56,189,248,0.12); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); border-radius: 6px; cursor: pointer;">
+                <span>전체 8열 원장 보기</span>
+                <span>↗</span>
+              </button>
+            </div>
+            <div id="company-ledger-timeline-container" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 420px; overflow-y: auto;">
+              <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.85rem;">시그널 데이터를 불러오는 중...</div>
             </div>
           </div>
         </section>
@@ -653,6 +676,188 @@
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ========================================================================= -->
+  <!-- 2.5 MODE: 2026 FULL-YEAR UNPIVOTED LEDGER & X RADAR (8열 와이드 전용 뷰)   -->
+  <!-- ========================================================================= -->
+  <section id="mode-ledger-hub" class="main-mode-view" style="display: none; padding: 1.5rem 2.5rem 4rem; max-width: 1750px; margin: 0 auto;">
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+      
+      <!-- Top Hero Banner -->
+      <div class="macro-hero-banner" style="background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(56,189,248,0.18)); border-color: rgba(99,102,241,0.35);">
+        <div class="macro-hero-text">
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem;">
+            <span style="font-size: 1.5rem;">📡</span>
+            <h2 style="font-size: 1.6rem; font-weight: 800; background: linear-gradient(135deg, #a5b4fc, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+              2026년 AI 반도체 밸류체인 36개사 연간 통합 원장 (8열 Full Matrix)
+            </h2>
+            <span class="badge" style="background: rgba(56,189,248,0.2); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35); font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 4px;">
+              Plan A 8 Columns
+            </span>
+          </div>
+          <p style="color: var(--text-secondary); font-size: 0.88rem; max-width: 1000px; line-height: 1.5;">
+            2026년 1월부터 10월까지 36개 기업의 SEC EDGAR 공식 공시, 설비투자(CapEx), 선단 팹 증설 이정표와 SignalForge(c_1006) 𝕏 트위터 실시간 레이더 시그널을 구조화하여 평탄화한 통합 원장입니다.
+          </p>
+        </div>
+      </div>
+
+      <!-- 5 KPI Summary Cards -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
+        <div class="kpi-mini-card" style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-subtle); padding: 1rem 1.25rem; border-radius: 8px;">
+          <div class="kpi-label" style="font-size: 0.78rem; color: var(--text-muted);">총 등록 이벤트</div>
+          <div class="kpi-val" id="ledger-kpi-total" style="font-size: 1.5rem; font-weight: 800; color: #f8fafc; margin: 0.25rem 0;">985건</div>
+          <div class="kpi-sub" style="font-size: 0.75rem; color: #38bdf8;">2026년 1월 ~ 10월 전수</div>
+        </div>
+        <div class="kpi-mini-card" style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-subtle); padding: 1rem 1.25rem; border-radius: 8px;">
+          <div class="kpi-label" style="font-size: 0.78rem; color: var(--text-muted);">상반기 공시/실적 (H1)</div>
+          <div class="kpi-val" id="ledger-kpi-h1" style="font-size: 1.5rem; font-weight: 800; color: #34d399; margin: 0.25rem 0;">104건</div>
+          <div class="kpi-sub" style="font-size: 0.75rem; color: var(--text-muted);">GTC / CHIPS Act / 실적</div>
+        </div>
+        <div class="kpi-mini-card" style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-subtle); padding: 1rem 1.25rem; border-radius: 8px;">
+          <div class="kpi-label" style="font-size: 0.78rem; color: var(--text-muted);">하반기 공시 & 시그널 (H2)</div>
+          <div class="kpi-val" id="ledger-kpi-h2" style="font-size: 1.5rem; font-weight: 800; color: #a5b4fc; margin: 0.25rem 0;">881건</div>
+          <div class="kpi-sub" style="font-size: 0.75rem; color: var(--text-muted);">7월·8월·9월·10월 통합</div>
+        </div>
+        <div class="kpi-mini-card" style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-subtle); padding: 1rem 1.25rem; border-radius: 8px;">
+          <div class="kpi-label" style="font-size: 0.78rem; color: var(--text-muted);">𝕏 소셜 레이더 시그널</div>
+          <div class="kpi-val" id="ledger-kpi-twitter" style="font-size: 1.5rem; font-weight: 800; color: #38bdf8; margin: 0.25rem 0;">625건</div>
+          <div class="kpi-sub" style="font-size: 0.75rem; color: #38bdf8;">SignalForge 222 계정</div>
+        </div>
+        <div class="kpi-mini-card" style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-subtle); padding: 1rem 1.25rem; border-radius: 8px;">
+          <div class="kpi-label" style="font-size: 0.78rem; color: var(--text-muted);">구조화 속성 식별률</div>
+          <div class="kpi-val" id="ledger-kpi-rate" style="font-size: 1.5rem; font-weight: 800; color: #fbbf24; margin: 0.25rem 0;">65.3%</div>
+          <div class="kpi-sub" style="font-size: 0.75rem; color: var(--text-muted);">상대방/제품/금액 자동 파싱</div>
+        </div>
+      </div>
+
+      <!-- Interactive Filter Toolbar Card -->
+      <div class="card" style="padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem;">
+        <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
+          
+          <!-- Dropdown Filters Group -->
+          <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+            
+            <!-- Layer Filter -->
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">레이어:</span>
+              <select id="ledger-filter-layer" class="sidebar-search-input" style="padding: 0.35rem 0.6rem; font-size: 0.82rem; width: 160px; background: rgba(15,23,42,0.8); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary);" onchange="applyLedgerFilters()">
+                <option value="ALL">전체 레이어 (L1~L8)</option>
+                <option value="L1">L1 AI 모델</option>
+                <option value="L2">L2 하이퍼스케일러</option>
+                <option value="L3">L3 컴퓨팅/가속기</option>
+                <option value="L4">L4 파운드리/제조</option>
+                <option value="L5">L5 메모리/스토리지</option>
+                <option value="L6">L6 광통신/네트워킹</option>
+                <option value="L7">L7 인프라/특수</option>
+                <option value="L8">L8 전력/에너지</option>
+              </select>
+            </div>
+
+            <!-- Company Filter -->
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">기업:</span>
+              <select id="ledger-filter-company" class="sidebar-search-input" style="padding: 0.35rem 0.6rem; font-size: 0.82rem; width: 170px; background: rgba(15,23,42,0.8); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary);" onchange="applyLedgerFilters()">
+                <option value="ALL">전체 기업 (36개사)</option>
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+
+            <!-- Period Filter -->
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">기간:</span>
+              <select id="ledger-filter-month" class="sidebar-search-input" style="padding: 0.35rem 0.6rem; font-size: 0.82rem; width: 150px; background: rgba(15,23,42,0.8); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary);" onchange="applyLedgerFilters()">
+                <option value="ALL">2026 연간 전체</option>
+                <option value="2026-10">2026년 10월</option>
+                <option value="2026-09">2026년 9월</option>
+                <option value="2026-08">2026년 8월</option>
+                <option value="2026-07">2026년 7월</option>
+                <option value="2026-06">2026년 6월</option>
+                <option value="2026-05">2026년 5월</option>
+                <option value="2026-04">2026년 4월</option>
+                <option value="2026-03">2026년 3월</option>
+                <option value="2026-02">2026년 2월</option>
+                <option value="2026-01">2026년 1월</option>
+              </select>
+            </div>
+
+            <!-- Search Input -->
+            <div style="position: relative;">
+              <input type="text" id="ledger-filter-search" placeholder="내용, 상대방, 제품, 수치 검색..." style="padding: 0.35rem 0.65rem 0.35rem 1.8rem; font-size: 0.82rem; width: 220px; background: rgba(15,23,42,0.8); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary);" oninput="debounceLedgerSearch()">
+              <span style="position: absolute; left: 0.55rem; top: 50%; transform: translateY(-50%); font-size: 0.75rem; color: var(--text-muted);">🔍</span>
+            </div>
+
+          </div>
+
+          <!-- Confidence Checkboxes & Export Button -->
+          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            
+            <div style="display: flex; align-items: center; gap: 0.5rem; background: rgba(15,23,42,0.6); padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid var(--border-subtle);">
+              <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">신뢰도:</span>
+              <label style="font-size: 0.78rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer; color: #34d399;">
+                <input type="checkbox" id="chk-conf-c4" checked onchange="applyLedgerFilters()"> C4 공식
+              </label>
+              <label style="font-size: 0.78rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer; color: #a5b4fc;">
+                <input type="checkbox" id="chk-conf-c3" checked onchange="applyLedgerFilters()"> C3 보도
+              </label>
+              <label style="font-size: 0.78rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer; color: #38bdf8;">
+                <input type="checkbox" id="chk-conf-c2" checked onchange="applyLedgerFilters()"> C2 분석가
+              </label>
+              <label style="font-size: 0.78rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer; color: #fbbf24;">
+                <input type="checkbox" id="chk-conf-c1" checked onchange="applyLedgerFilters()"> C1 루머
+              </label>
+            </div>
+
+            <button class="btn-secondary" onclick="exportLedgerCsv()" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.85rem; font-size: 0.82rem; background: rgba(30,41,59,0.9); border: 1px solid var(--border-subtle); border-radius: 6px; cursor: pointer; color: var(--text-primary);">
+              <span>📥</span>
+              <span>CSV 다운로드</span>
+            </button>
+
+          </div>
+
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted); border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
+          <div>
+            <span>조회 결과: </span>
+            <strong id="ledger-filtered-count" style="color: #38bdf8;">985건</strong>
+            <span id="ledger-filter-summary-text"> (필터 적용 없음)</span>
+          </div>
+          <button class="btn-text" onclick="resetLedgerFilters()" style="background: none; border: none; color: var(--accent-cyan); font-size: 0.78rem; cursor: pointer; text-decoration: underline;">
+            필터 초기화
+          </button>
+        </div>
+      </div>
+
+      <!-- 8-Column Wide Full-Width Data Table Card -->
+      <div class="card" style="padding: 1.25rem; overflow: hidden;">
+        <div class="table-container" style="max-height: 750px; overflow-y: auto; overflow-x: auto;">
+          <table class="data-table ledger-8col-table" style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
+            <thead style="position: sticky; top: 0; background: #0f172a; z-index: 10;">
+              <tr style="border-bottom: 2px solid var(--border-subtle); text-align: left;">
+                <th style="padding: 0.75rem 0.6rem; width: 140px; white-space: nowrap;">레이어 (Layer)</th>
+                <th style="padding: 0.75rem 0.6rem; width: 160px; white-space: nowrap;">기업 (티커/국가)</th>
+                <th style="padding: 0.75rem 0.6rem; width: 105px; white-space: nowrap; text-align: center;">발생일자</th>
+                <th style="padding: 0.75rem 0.8rem; min-width: 320px;">핵심 이벤트 내용 및 데이터</th>
+                <th style="padding: 0.75rem 0.6rem; width: 220px;">식별 대상 (상대·제품·시설)</th>
+                <th style="padding: 0.75rem 0.6rem; width: 180px;">정량 조건 (금액·용량·기간)</th>
+                <th style="padding: 0.75rem 0.6rem; width: 120px; text-align: center;">이벤트 유형</th>
+                <th style="padding: 0.75rem 0.6rem; width: 80px; text-align: center;">신뢰도</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-ledger-events">
+              <tr>
+                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+                  원장 데이터를 불러오는 중...
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

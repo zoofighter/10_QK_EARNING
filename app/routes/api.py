@@ -2006,5 +2006,64 @@ def get_macro_capacity_data():
         })
 
 
+@api_bp.route("/ledger/2026", methods=["GET"])
+def get_2026_ledger():
+    """
+    Return 2026 full-year unpivoted ledger events (Plan A 8 columns).
+    Supports filtering by ticker, layer, month, confidence, and search query.
+    """
+    from app.services.ledger_service import LedgerService
+    
+    ticker = request.args.get("ticker")
+    layer = request.args.get("layer")
+    month = request.args.get("month")
+    confidence = request.args.get("confidence")
+    query = request.args.get("query")
+    limit = int(request.args.get("limit", 1500))
+    offset = int(request.args.get("offset", 0))
+
+    result = LedgerService.get_filtered_events(
+        ticker=ticker,
+        layer=layer,
+        month=month,
+        confidence=confidence,
+        query=query,
+        limit=limit,
+        offset=offset
+    )
+    return jsonify(result)
+
+
+@api_bp.route("/ledger/2026/export", methods=["GET"])
+def export_2026_ledger_csv():
+    """Export filtered 2026 ledger events as a CSV download."""
+    from flask import Response
+    from app.services.ledger_service import LedgerService
+    
+    ticker = request.args.get("ticker")
+    layer = request.args.get("layer")
+    month = request.args.get("month")
+    confidence = request.args.get("confidence")
+    query = request.args.get("query")
+
+    result = LedgerService.get_filtered_events(
+        ticker=ticker,
+        layer=layer,
+        month=month,
+        confidence=confidence,
+        query=query,
+        limit=5000,
+        offset=0
+    )
+    csv_data = LedgerService.export_csv(result["events"])
+    
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=2026_AI_Semiconductor_ValueChain_Ledger.csv"}
+    )
+
+
+
 
 

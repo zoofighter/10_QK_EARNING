@@ -12,16 +12,21 @@ sys.path.insert(0, str(ROOT_DIR))
 from app.config import DB_PATH
 
 LAYERS = [
-    ("L2_HYPERSCALER", "하이퍼스케일러", "Hyperscalers", 1),
-    ("L3_COMPUTE", "컴퓨팅/가속기", "Compute & Accelerators", 2),
-    ("L4_FOUNDRY", "파운드리/장비", "Foundry & Equipment", 3),
-    ("L5_MEMORY", "메모리/스토리지", "Memory & Storage", 4),
-    ("L6_OPTICAL", "광통신/네트워킹", "Optical & Networking", 5),
-    ("L7_INFRA", "인프라/특수", "Infrastructure & Specialized", 6),
-    ("L8_POWER", "전력/에너지", "Power & Energy", 7),
+    ("L1_AI_MODEL", "AI 모델/연구소", "Frontier AI Models & Labs", 1),
+    ("L2_HYPERSCALER", "하이퍼스케일러", "Hyperscalers", 2),
+    ("L3_COMPUTE", "컴퓨팅/가속기", "Compute & Accelerators", 3),
+    ("L4_FOUNDRY", "파운드리/장비", "Foundry & Equipment", 4),
+    ("L5_MEMORY", "메모리/스토리지", "Memory & Storage", 5),
+    ("L6_OPTICAL", "광통신/네트워킹", "Optical & Networking", 6),
+    ("L7_INFRA", "인프라/특수", "Infrastructure & Specialized", 7),
+    ("L8_POWER", "전력/에너지", "Power & Energy", 8),
 ]
 
 ENTITIES = [
+    # L1_AI_MODEL (2)
+    ("OAI", "OpenAI Inc.", "오픈AI", "L1_AI_MODEL", "UNLISTED", None, "US", "MANUAL", "12"),
+    ("ANTHROPIC", "Anthropic PBC", "앤트로픽", "L1_AI_MODEL", "UNLISTED", None, "US", "MANUAL", "12"),
+
     # L2_HYPERSCALER (7)
     ("GOOGL", "Alphabet Inc.", "구글(알파벳)", "L2_HYPERSCALER", "NASDAQ", "0001652044", "US", "SEC", "12"),
     ("AMZN", "Amazon.com Inc.", "아마존", "L2_HYPERSCALER", "NASDAQ", "0001018724", "US", "SEC", "12"),
@@ -60,9 +65,7 @@ ENTITIES = [
     ("COHR", "Coherent Corp.", "코히어런트", "L6_OPTICAL", "NYSE", "0000863894", "US", "SEC", "06"),
     ("ANET", "Arista Networks Inc.", "아리스타 네트웍스", "L6_OPTICAL", "NYSE", "0001596532", "US", "SEC", "12"),
 
-    # L7_INFRA (5)
-    ("OAI", "OpenAI Inc.", "오픈AI", "L7_INFRA", "UNLISTED", None, "US", "MANUAL", "12"),
-    ("ANTHROPIC", "Anthropic PBC", "앤트로픽", "L7_INFRA", "UNLISTED", None, "US", "MANUAL", "12"),
+    # L7_INFRA (3)
     ("SPACEX", "SpaceX / xAI", "스페이스X / xAI", "L7_INFRA", "UNLISTED", None, "US", "MANUAL", "12"),
     ("9984.T", "SoftBank Group Corp.", "소프트뱅크 그룹", "L7_INFRA", "TSE", None, "JP", "MANUAL", "03"),
     ("AAPL", "Apple Inc.", "애플", "L7_INFRA", "NASDAQ", "0000320193", "US", "SEC", "09"),

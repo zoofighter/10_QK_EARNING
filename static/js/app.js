@@ -35,6 +35,7 @@ const COUNTRY_FLAGS = {
 };
 
 const LAYER_COLORS = {
+  'L1_AI_MODEL': '#EF4444',
   'L2_HYPERSCALER': '#06B6D4',
   'L3_COMPUTE': '#8B5CF6',
   'L4_FOUNDRY': '#10B981',
@@ -101,6 +102,8 @@ function handleHashRouting() {
     switchMainMode('company-hub', ticker, subtab);
   } else if (route === 'macro') {
     switchMainMode('macro-hub');
+  } else if (route === 'ledger') {
+    switchMainMode('ledger-hub');
   } else if (route === 'indicators') {
     switchMainMode('indicators');
   } else if (route === 'calendar') {
@@ -117,6 +120,8 @@ function updateHash() {
     window.location.hash = `#company/${state.currentTicker}/${state.currentSubTab}`;
   } else if (state.currentMode === 'macro-hub') {
     window.location.hash = '#macro';
+  } else if (state.currentMode === 'ledger-hub') {
+    window.location.hash = '#ledger';
   } else if (state.currentMode === 'indicators') {
     window.location.hash = '#indicators';
   } else if (state.currentMode === 'calendar') {
@@ -130,7 +135,7 @@ function switchMainMode(mode, targetTicker, targetSubTab) {
   state.currentMode = mode;
 
   // Toggle mode views
-  const modeViews = ['company-hub', 'macro-hub', 'indicators', 'calendar', 'filings-archive'];
+  const modeViews = ['company-hub', 'macro-hub', 'indicators', 'calendar', 'filings-archive', 'ledger-hub'];
   modeViews.forEach(m => {
     const el = document.getElementById(`mode-${m}`);
     if (el) el.style.display = (m === mode) ? 'block' : 'none';
@@ -142,7 +147,8 @@ function switchMainMode(mode, targetTicker, targetSubTab) {
     'macro-hub': 'btn-mode-macro',
     'indicators': 'btn-mode-indicators',
     'calendar': 'btn-mode-calendar',
-    'filings-archive': 'btn-mode-filings'
+    'filings-archive': 'btn-mode-filings',
+    'ledger-hub': 'btn-mode-ledger'
   };
   Object.entries(modeBtns).forEach(([m, btnId]) => {
     const b = document.getElementById(btnId);
@@ -159,6 +165,8 @@ function switchMainMode(mode, targetTicker, targetSubTab) {
     switchCompanySubTab(targetSubTab || state.currentSubTab || 'snapshot', false);
   } else if (mode === 'macro-hub') {
     loadMacroHub();
+  } else if (mode === 'ledger-hub') {
+    initLedgerView();
   } else if (mode === 'indicators') {
     loadIndicators();
   } else if (mode === 'calendar') {
@@ -631,6 +639,9 @@ async function loadSubTabSnapshot(ticker) {
   } catch (e) {
     console.warn('Failed to load segments:', e);
   }
+
+  // 3. Mini Ledger Timeline Widget
+  loadCompanyLedgerWidget(ticker);
 }
 
 
@@ -2349,4 +2360,356 @@ function handleCmdKKeyDown(e) {
     const selected = document.querySelector('.cmd-k-item.selected');
     if (selected) selected.click();
   }
+}
+
+
+// =========================================================================
+// 2026 FULL-YEAR UNPIVOTED LEDGER (8-COLUMN MATRIX & HYBRID WIDGET)
+// =========================================================================
+
+let ledgerSearchDebounceTimer = null;
+let ledgerInitialized = false;
+
+function initLedgerView() {
+  populateLedgerCompanyOptions();
+  fetchAndRenderLedger();
+  ledgerInitialized = true;
+}
+
+function populateLedgerCompanyOptions() {
+  const select = document.getElementById('ledger-filter-company');
+  if (!select) return;
+
+  const currentVal = select.value || 'ALL';
+  const hasPopulated = select.options.length > 2;
+
+  if (!hasPopulated && state.entities && state.entities.length > 0) {
+    const sorted = [...state.entities].sort((a, b) => {
+      if (a.layer_code === b.layer_code) return a.ticker.localeCompare(b.ticker);
+      return a.layer_code.localeCompare(b.layer_code);
+    });
+
+    let optsHtml = '<option value="ALL">전체 기업 (36개사)</option>';
+    sorted.forEach(e => {
+      optsHtml += `<option value="${e.ticker}">[${e.layer_code}] ${e.name_ko} (${e.ticker})</option>`;
+    });
+    select.innerHTML = optsHtml;
+    select.value = currentVal;
+  }
+}
+
+function getLedgerFilters() {
+  const layer = document.getElementById('ledger-filter-layer')?.value || 'ALL';
+  const ticker = document.getElementById('ledger-filter-company')?.value || 'ALL';
+  const month = document.getElementById('ledger-filter-month')?.value || 'ALL';
+  const q = document.getElementById('ledger-filter-search')?.value.trim() || '';
+
+  const confs = [];
+  if (document.getElementById('chk-conf-c4')?.checked) confs.push('C4');
+  if (document.getElementById('chk-conf-c3')?.checked) confs.push('C3');
+  if (document.getElementById('chk-conf-c2')?.checked) confs.push('C2');
+  if (document.getElementById('chk-conf-c1')?.checked) confs.push('C1');
+
+  return { layer, ticker, month, q, confs: confs.join(',') };
+}
+
+async function fetchAndRenderLedger(page = 1) {
+  const tbody = document.getElementById('tbody-ledger-events');
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+        <div style="display: inline-block; animation: spin 1s linear infinite; margin-bottom: 0.5rem; font-size: 1.3rem;">⏳</div>
+        <div>2026 통합 원장 데이터를 조회하는 중입니다...</div>
+      </td>
+    </tr>
+  `;
+
+  const filters = getLedgerFilters();
+  const queryParams = new URLSearchParams();
+  if (filters.layer !== 'ALL') queryParams.set('layer', filters.layer);
+  if (filters.ticker !== 'ALL') queryParams.set('ticker', filters.ticker);
+  if (filters.month !== 'ALL') queryParams.set('month', filters.month);
+  if (filters.q) queryParams.set('q', filters.q);
+  if (filters.confs) queryParams.set('confidence', filters.confs);
+  queryParams.set('limit', '1000'); // 전체 목록 표시
+  queryParams.set('page', page.toString());
+
+  try {
+    const res = await fetch(`/api/ledger/2026?${queryParams.toString()}`).then(r => r.json());
+    if (res.status !== 'success') {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#f87171; padding:2rem;">데이터 로드 실패: ${escapeHtml(res.message || '오류')}</td></tr>`;
+      return;
+    }
+
+    // Update KPI Counters
+    if (res.stats) {
+      const kTotal = document.getElementById('ledger-kpi-total');
+      const kH1 = document.getElementById('ledger-kpi-h1');
+      const kH2 = document.getElementById('ledger-kpi-h2');
+      const kTwitter = document.getElementById('ledger-kpi-twitter');
+      const kRate = document.getElementById('ledger-kpi-rate');
+
+      if (kTotal) kTotal.textContent = `${res.stats.total.toLocaleString()}건`;
+      if (kH1) kH1.textContent = `${res.stats.h1.toLocaleString()}건`;
+      if (kH2) kH2.textContent = `${res.stats.h2.toLocaleString()}건`;
+      if (kTwitter) kTwitter.textContent = `${res.stats.twitter.toLocaleString()}건`;
+      if (kRate) kRate.textContent = `${res.stats.structured_rate}%`;
+    }
+
+    // Update Filter Summary Label
+    const countEl = document.getElementById('ledger-filtered-count');
+    const summaryEl = document.getElementById('ledger-filter-summary-text');
+    if (countEl) countEl.textContent = `${(res.total || 0).toLocaleString()}건`;
+
+    if (summaryEl) {
+      const summaryParts = [];
+      if (filters.layer !== 'ALL') summaryParts.push(`레이어: ${filters.layer}`);
+      if (filters.ticker !== 'ALL') summaryParts.push(`기업: ${filters.ticker}`);
+      if (filters.month !== 'ALL') summaryParts.push(`기간: ${filters.month}`);
+      if (filters.q) summaryParts.push(`검색: "${filters.q}"`);
+      if (filters.confs && filters.confs.split(',').length < 4) summaryParts.push(`신뢰도: ${filters.confs}`);
+
+      summaryEl.textContent = summaryParts.length > 0 ? ` (${summaryParts.join(' · ')})` : ' (필터 적용 없음)';
+    }
+
+    // Render Events Table Rows
+    const events = res.events || [];
+    if (events.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+            🔍 지정하신 필터 조건에 부합하는 원장 기록이 없습니다.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    const rowsHtml = events.map(ev => {
+      const layerColor = LAYER_COLORS[ev.layer_code] || '#6366f1';
+      const entityTicker = ev.ticker || '';
+      const layerBadge = `<span class="badge" style="background: ${layerColor}20; color: ${layerColor}; border: 1px solid ${layerColor}50; font-weight: 600; font-size: 0.73rem;">${escapeHtml(ev.layer || ev.layer_code)}</span>`;
+      
+      const entityCell = `
+        <div style="display: flex; align-items: center; gap: 0.4rem;">
+          <a href="javascript:void(0)" onclick="selectCompany('${entityTicker}'); switchMainMode('company-hub');" style="color: #38bdf8; font-weight: 600; text-decoration: underline;" title="${entityTicker} 워크스페이스 이동">
+            ${escapeHtml(ev.entity_display || entityTicker)}
+          </a>
+        </div>
+      `;
+
+      const dateCell = `<span class="ledger-col-date">${escapeHtml(ev.date || '-')}</span>`;
+      const rawEventCell = `<div class="ledger-col-raw">${highlightSearchKeyword(ev.raw_event || '', filters.q)}</div>`;
+      const targetCell = renderTargetIdentifiedBadges(ev.target_identified);
+      const metricsCell = renderMetricsConditionBadges(ev.metrics_condition);
+      const eventTypeCell = `<div style="text-align: center;"><span class="badge-event-type">${escapeHtml(ev.event_type || '시그널')}</span></div>`;
+      const confCell = `<div style="text-align: center;">${renderConfidenceBadge(ev.confidence, ev.confidence_code)}</div>`;
+
+      return `
+        <tr>
+          <td>${layerBadge}</td>
+          <td>${entityCell}</td>
+          <td>${dateCell}</td>
+          <td>${rawEventCell}</td>
+          <td>${targetCell}</td>
+          <td>${metricsCell}</td>
+          <td>${eventTypeCell}</td>
+          <td>${confCell}</td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.innerHTML = rowsHtml;
+
+  } catch (err) {
+    console.error('Failed to fetch ledger:', err);
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#f87171; padding:2rem;">원장 데이터를 불러오지 못했습니다. (네트워크/서버 오류)</td></tr>`;
+  }
+}
+
+function renderTargetIdentifiedBadges(str) {
+  if (!str || str.trim() === '-' || str.trim() === '') {
+    return '<span style="color: var(--text-muted); font-size: 0.78rem;">-</span>';
+  }
+  const parts = str.split(/[,;/]|\s{2,}/).map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return '<span style="color: var(--text-muted); font-size: 0.78rem;">-</span>';
+
+  return `<div class="badge-tag-wrap">${parts.map(p => {
+    let cls = 'badge-target-prod';
+    let icon = '📦';
+    if (p.includes('Fab') || p.includes('팹') || p.includes('공장') || p.includes('애리조나') || p.includes('테일러') || p.includes('캠퍼스') || p.includes('데이터센터') || p.includes('기지') || p.includes('신규 팹')) {
+      cls = 'badge-target-fac';
+      icon = '🏭';
+    } else if (p.includes('고객') || p.includes('공급') || p.includes('파트너') || p.includes('협력') || p.includes('정부') || p.includes('미국') || p.includes('상무부') || p.includes('오픈AI') || p.includes('MS') || p.includes('마이크로소프트') || p.includes('애플') || p.includes('구글') || p.includes('메타') || p.includes('테슬라') || p.includes('TSMC') || p.includes('삼성') || p.includes('SK하이닉스')) {
+      cls = 'badge-target-cp';
+      icon = '🤝';
+    }
+    return `<span class="${cls}"><span>${icon}</span>${escapeHtml(p)}</span>`;
+  }).join('')}</div>`;
+}
+
+function renderMetricsConditionBadges(str) {
+  if (!str || str.trim() === '-' || str.trim() === '') {
+    return '<span style="color: var(--text-muted); font-size: 0.78rem;">-</span>';
+  }
+  const parts = str.split(/[,;/]|\s{2,}/).map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return '<span style="color: var(--text-muted); font-size: 0.78rem;">-</span>';
+
+  return `<div class="badge-tag-wrap">${parts.map(p => {
+    let cls = 'badge-metric-amt';
+    let icon = '💰';
+    if (p.includes('MW') || p.includes('GW') || p.includes('wpm') || p.includes('장') || p.includes('GB') || p.includes('TB') || p.includes('만개') || p.includes('만장') || p.includes('Gbps') || p.includes('nm') || p.includes('단')) {
+      cls = 'badge-metric-cap';
+      icon = '⚡';
+    } else if (p.includes('년') || p.includes('분기') || p.includes('개월') || p.includes('월') || p.includes('H1') || p.includes('H2') || p.includes('Q1') || p.includes('Q2') || p.includes('Q3') || p.includes('Q4')) {
+      cls = 'badge-metric-period';
+      icon = '⏱️';
+    }
+    return `<span class="${cls}"><span>${icon}</span>${escapeHtml(p)}</span>`;
+  }).join('')}</div>`;
+}
+
+function renderConfidenceBadge(conf, confCode) {
+  const code = confCode || (conf ? conf.substring(0, 2) : 'C3');
+  const clsMap = {
+    'C4': 'badge-conf-c4',
+    'C3': 'badge-conf-c3',
+    'C2': 'badge-conf-c2',
+    'C1': 'badge-conf-c1'
+  };
+  const labelMap = {
+    'C4': 'C4 공식',
+    'C3': 'C3 보도',
+    'C2': 'C2 분석',
+    'C1': 'C1 루머'
+  };
+  const cls = clsMap[code] || 'badge-conf-c3';
+  const label = labelMap[code] || conf || code;
+  return `<span class="${cls}">${escapeHtml(label)}</span>`;
+}
+
+function highlightSearchKeyword(text, keyword) {
+  if (!keyword || !text) return escapeHtml(text || '');
+  const escapedText = escapeHtml(text);
+  const escapedKw = escapeHtml(keyword);
+  const regex = new RegExp(`(${escapedKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  return escapedText.replace(regex, '<mark>$1</mark>');
+}
+
+function applyLedgerFilters() {
+  fetchAndRenderLedger(1);
+}
+
+function debounceLedgerSearch() {
+  if (ledgerSearchDebounceTimer) clearTimeout(ledgerSearchDebounceTimer);
+  ledgerSearchDebounceTimer = setTimeout(() => {
+    applyLedgerFilters();
+  }, 250);
+}
+
+function resetLedgerFilters() {
+  const layerSel = document.getElementById('ledger-filter-layer');
+  const compSel = document.getElementById('ledger-filter-company');
+  const monthSel = document.getElementById('ledger-filter-month');
+  const searchInput = document.getElementById('ledger-filter-search');
+
+  if (layerSel) layerSel.value = 'ALL';
+  if (compSel) compSel.value = 'ALL';
+  if (monthSel) monthSel.value = 'ALL';
+  if (searchInput) searchInput.value = '';
+
+  ['chk-conf-c4', 'chk-conf-c3', 'chk-conf-c2', 'chk-conf-c1'].forEach(id => {
+    const chk = document.getElementById(id);
+    if (chk) chk.checked = true;
+  });
+
+  fetchAndRenderLedger(1);
+}
+
+function exportLedgerCsv() {
+  const filters = getLedgerFilters();
+  const queryParams = new URLSearchParams();
+  if (filters.layer !== 'ALL') queryParams.set('layer', filters.layer);
+  if (filters.ticker !== 'ALL') queryParams.set('ticker', filters.ticker);
+  if (filters.month !== 'ALL') queryParams.set('month', filters.month);
+  if (filters.q) queryParams.set('q', filters.q);
+  if (filters.confs) queryParams.set('confidence', filters.confs);
+
+  window.open(`/api/ledger/2026/export?${queryParams.toString()}`, '_blank');
+}
+
+// ─── Company Snapshot Mini Timeline Widget ───
+
+async function loadCompanyLedgerWidget(ticker) {
+  const container = document.getElementById('company-ledger-timeline-container');
+  if (!container) return;
+
+  container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.85rem;">2026 시그널 데이터를 불러오는 중...</div>';
+
+  try {
+    const res = await fetch(`/api/ledger/2026?ticker=${ticker}&limit=8`).then(r => r.json());
+    if (res.status !== 'success' || !res.events || res.events.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; color: var(--text-muted); padding: 2rem; font-size: 0.85rem; background: rgba(0,0,0,0.15); border-radius: 6px;">
+          ${ticker} 기업에 등록된 2026년 시그널 원장 내역이 없습니다.
+        </div>
+      `;
+      return;
+    }
+
+    const cardsHtml = res.events.map(ev => {
+      const confBadge = renderConfidenceBadge(ev.confidence, ev.confidence_code);
+      const targetTags = renderTargetIdentifiedBadges(ev.target_identified);
+      const metricTags = renderMetricsConditionBadges(ev.metrics_condition);
+
+      return `
+        <div class="mini-ledger-card">
+          <div class="mini-ledger-header">
+            <span class="mini-ledger-date">${escapeHtml(ev.date || '-')}</span>
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span class="badge-event-type" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;">${escapeHtml(ev.event_type || '시그널')}</span>
+              ${confBadge}
+            </div>
+          </div>
+          <div class="mini-ledger-content">
+            ${escapeHtml(ev.raw_event || '')}
+          </div>
+          <div class="mini-ledger-tags">
+            ${targetTags !== '<span style="color: var(--text-muted); font-size: 0.78rem;">-</span>' ? targetTags : ''}
+            ${metricTags !== '<span style="color: var(--text-muted); font-size: 0.78rem;">-</span>' ? metricTags : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = cardsHtml;
+
+  } catch (err) {
+    console.error('Failed to load company ledger widget:', err);
+    container.innerHTML = '<div style="text-align: center; color: #f87171; padding: 1.5rem; font-size: 0.85rem;">시그널 위젯 로드 실패</div>';
+  }
+}
+
+function jumpToLedgerForCurrentCompany() {
+  const currentTicker = state.currentTicker || 'NVDA';
+  switchMainMode('ledger-hub');
+  populateLedgerCompanyOptions();
+
+  const compSelect = document.getElementById('ledger-filter-company');
+  if (compSelect) {
+    compSelect.value = currentTicker;
+  }
+
+  const layerSelect = document.getElementById('ledger-filter-layer');
+  if (layerSelect) layerSelect.value = 'ALL';
+
+  const monthSelect = document.getElementById('ledger-filter-month');
+  if (monthSelect) monthSelect.value = 'ALL';
+
+  const searchInput = document.getElementById('ledger-filter-search');
+  if (searchInput) searchInput.value = '';
+
+  applyLedgerFilters();
 }
