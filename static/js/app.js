@@ -57,6 +57,17 @@ function destroyChart(key) {
   }
 }
 
+// ─── HTML Sanitizer Helper ───
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ─── App Initialization ───
 document.addEventListener('DOMContentLoaded', async () => {
   // Set current date in header
@@ -2369,11 +2380,53 @@ function handleCmdKKeyDown(e) {
 
 let ledgerSearchDebounceTimer = null;
 let ledgerInitialized = false;
+let currentLedgerSortOrder = 'desc'; // 기본값 최신순 (2026-10 -> 2026-01)
 
 function initLedgerView() {
   populateLedgerCompanyOptions();
   fetchAndRenderLedger();
   ledgerInitialized = true;
+}
+
+function toggleLedgerDateSort() {
+  currentLedgerSortOrder = (currentLedgerSortOrder === 'desc') ? 'asc' : 'desc';
+  const sortIcon = document.getElementById('ledger-sort-icon');
+  if (sortIcon) {
+    sortIcon.textContent = (currentLedgerSortOrder === 'desc') ? '▼ (최신순)' : '▲ (과거순)';
+    sortIcon.style.color = (currentLedgerSortOrder === 'desc') ? '#38bdf8' : '#a5b4fc';
+  }
+  fetchAndRenderLedger(1);
+}
+
+let currentLedgerViewMode = localStorage.getItem('ledger_view_mode') || 'full'; // 'full' (기본값) 또는 'compact' (줄임)
+
+function setLedgerViewMode(mode) {
+  currentLedgerViewMode = (mode === 'compact') ? 'compact' : 'full';
+  try {
+    localStorage.setItem('ledger_view_mode', currentLedgerViewMode);
+  } catch (e) {}
+
+  const table = document.querySelector('.ledger-8col-table');
+  const btnFull = document.getElementById('btn-view-full');
+  const btnCompact = document.getElementById('btn-view-compact');
+
+  if (table) {
+    if (currentLedgerViewMode === 'compact') {
+      table.classList.add('table-compact-mode');
+    } else {
+      table.classList.remove('table-compact-mode');
+    }
+  }
+
+  if (btnFull && btnCompact) {
+    if (currentLedgerViewMode === 'compact') {
+      btnCompact.classList.add('active');
+      btnFull.classList.remove('active');
+    } else {
+      btnFull.classList.add('active');
+      btnCompact.classList.remove('active');
+    }
+  }
 }
 
 function populateLedgerCompanyOptions() {
@@ -2417,6 +2470,13 @@ async function fetchAndRenderLedger(page = 1) {
   const tbody = document.getElementById('tbody-ledger-events');
   if (!tbody) return;
 
+  // Update header sort indicator
+  const sortIcon = document.getElementById('ledger-sort-icon');
+  if (sortIcon) {
+    sortIcon.textContent = (currentLedgerSortOrder === 'desc') ? '▼ (최신순)' : '▲ (과거순)';
+    sortIcon.style.color = (currentLedgerSortOrder === 'desc') ? '#38bdf8' : '#a5b4fc';
+  }
+
   tbody.innerHTML = `
     <tr>
       <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 3rem;">
@@ -2433,6 +2493,7 @@ async function fetchAndRenderLedger(page = 1) {
   if (filters.month !== 'ALL') queryParams.set('month', filters.month);
   if (filters.q) queryParams.set('q', filters.q);
   if (filters.confs) queryParams.set('confidence', filters.confs);
+  queryParams.set('order', currentLedgerSortOrder);
   queryParams.set('limit', '1000'); // 전체 목록 표시
   queryParams.set('page', page.toString());
 
@@ -2451,11 +2512,17 @@ async function fetchAndRenderLedger(page = 1) {
       const kTwitter = document.getElementById('ledger-kpi-twitter');
       const kRate = document.getElementById('ledger-kpi-rate');
 
-      if (kTotal) kTotal.textContent = `${res.stats.total.toLocaleString()}건`;
-      if (kH1) kH1.textContent = `${res.stats.h1.toLocaleString()}건`;
-      if (kH2) kH2.textContent = `${res.stats.h2.toLocaleString()}건`;
-      if (kTwitter) kTwitter.textContent = `${res.stats.twitter.toLocaleString()}건`;
-      if (kRate) kRate.textContent = `${res.stats.structured_rate}%`;
+      const totalVal = res.stats.total_events ?? res.stats.total ?? res.total;
+      const h1Val = res.stats.h1_events ?? res.stats.h1;
+      const h2Val = res.stats.h2_events ?? res.stats.h2;
+      const twitterVal = res.stats.twitter_events ?? res.stats.twitter;
+      const rateVal = res.stats.structured_rate;
+
+      if (kTotal && totalVal !== undefined) kTotal.textContent = `${totalVal.toLocaleString()}건`;
+      if (kH1 && h1Val !== undefined) kH1.textContent = `${h1Val.toLocaleString()}건`;
+      if (kH2 && h2Val !== undefined) kH2.textContent = `${h2Val.toLocaleString()}건`;
+      if (kTwitter && twitterVal !== undefined) kTwitter.textContent = `${twitterVal.toLocaleString()}건`;
+      if (kRate && rateVal !== undefined) kRate.textContent = `${rateVal}%`;
     }
 
     // Update Filter Summary Label
@@ -2488,22 +2555,28 @@ async function fetchAndRenderLedger(page = 1) {
     }
 
     const rowsHtml = events.map(ev => {
-      const layerColor = LAYER_COLORS[ev.layer_code] || '#6366f1';
+      const layerCode = ev.layer_code || (ev.layer ? ev.layer.split(' ')[0] : 'L3');
+      const layerColor = LAYER_COLORS[layerCode] || '#6366f1';
       const entityTicker = ev.ticker || '';
-      const layerBadge = `<span class="badge" style="background: ${layerColor}20; color: ${layerColor}; border: 1px solid ${layerColor}50; font-weight: 600; font-size: 0.73rem;">${escapeHtml(ev.layer || ev.layer_code)}</span>`;
+      const layerBadge = `<span class="badge" style="background: ${layerColor}20; color: ${layerColor}; border: 1px solid ${layerColor}50; font-weight: 600; font-size: 0.73rem;">${escapeHtml(ev.layer || layerCode)}</span>`;
       
+      const entityNameDisplay = ev.entity || ev.entity_display || (ev.name ? `${ev.name} (${ev.ticker})` : entityTicker);
       const entityCell = `
         <div style="display: flex; align-items: center; gap: 0.4rem;">
           <a href="javascript:void(0)" onclick="selectCompany('${entityTicker}'); switchMainMode('company-hub');" style="color: #38bdf8; font-weight: 600; text-decoration: underline;" title="${entityTicker} 워크스페이스 이동">
-            ${escapeHtml(ev.entity_display || entityTicker)}
+            ${escapeHtml(entityNameDisplay)}
           </a>
         </div>
       `;
 
+      const rawEventText = ev.content || ev.raw_event || '';
+      const targetText = ev.target || ev.target_identified || '-';
+      const metricsText = ev.metrics || ev.metrics_condition || '-';
+
       const dateCell = `<span class="ledger-col-date">${escapeHtml(ev.date || '-')}</span>`;
-      const rawEventCell = `<div class="ledger-col-raw">${highlightSearchKeyword(ev.raw_event || '', filters.q)}</div>`;
-      const targetCell = renderTargetIdentifiedBadges(ev.target_identified);
-      const metricsCell = renderMetricsConditionBadges(ev.metrics_condition);
+      const rawEventCell = `<div class="ledger-col-raw">${renderLedgerContent(rawEventText, filters.q)}</div>`;
+      const targetCell = renderTargetIdentifiedBadges(targetText);
+      const metricsCell = renderMetricsConditionBadges(metricsText);
       const eventTypeCell = `<div style="text-align: center;"><span class="badge-event-type">${escapeHtml(ev.event_type || '시그널')}</span></div>`;
       const confCell = `<div style="text-align: center;">${renderConfidenceBadge(ev.confidence, ev.confidence_code)}</div>`;
 
@@ -2522,6 +2595,7 @@ async function fetchAndRenderLedger(page = 1) {
     }).join('');
 
     tbody.innerHTML = rowsHtml;
+    setLedgerViewMode(currentLedgerViewMode);
 
   } catch (err) {
     console.error('Failed to fetch ledger:', err);
@@ -2598,6 +2672,36 @@ function highlightSearchKeyword(text, keyword) {
   return escapedText.replace(regex, '<mark>$1</mark>');
 }
 
+function renderLedgerContent(rawText, keyword) {
+  if (!rawText) return '';
+
+  let text = String(rawText).trim();
+  let handle = '';
+
+  // 1. If format is [𝕏 Radar] DisplayName(@handle): body or DisplayName(handle): body
+  const fullTwMatch = text.match(/^\[𝕏\s*Radar\]\s*.*?\(@?([a-zA-Z0-9_]+)\)\s*:\s*([\s\S]*)$/);
+  if (fullTwMatch) {
+    const rawH = fullTwMatch[1].replace(/^@/, '');
+    handle = `@${rawH}`;
+    text = fullTwMatch[2].trim();
+  } else {
+    // 2. If format is already @handle: body
+    const handleMatch = text.match(/^@([a-zA-Z0-9_]+)\s*:\s*([\s\S]*)$/);
+    if (handleMatch) {
+      handle = `@${handleMatch[1]}`;
+      text = handleMatch[2].trim();
+    }
+  }
+
+  const highlightedText = highlightSearchKeyword(text, keyword);
+
+  if (handle) {
+    return `<span class="badge-twitter-handle">${escapeHtml(handle)}</span> ${highlightedText}`;
+  }
+
+  return highlightedText;
+}
+
 function applyLedgerFilters() {
   fetchAndRenderLedger(1);
 }
@@ -2636,6 +2740,7 @@ function exportLedgerCsv() {
   if (filters.month !== 'ALL') queryParams.set('month', filters.month);
   if (filters.q) queryParams.set('q', filters.q);
   if (filters.confs) queryParams.set('confidence', filters.confs);
+  queryParams.set('order', currentLedgerSortOrder);
 
   window.open(`/api/ledger/2026/export?${queryParams.toString()}`, '_blank');
 }
@@ -2649,7 +2754,7 @@ async function loadCompanyLedgerWidget(ticker) {
   container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.85rem;">2026 시그널 데이터를 불러오는 중...</div>';
 
   try {
-    const res = await fetch(`/api/ledger/2026?ticker=${ticker}&limit=8`).then(r => r.json());
+    const res = await fetch(`/api/ledger/2026?ticker=${ticker}&limit=8&order=desc`).then(r => r.json());
     if (res.status !== 'success' || !res.events || res.events.length === 0) {
       container.innerHTML = `
         <div style="text-align: center; color: var(--text-muted); padding: 2rem; font-size: 0.85rem; background: rgba(0,0,0,0.15); border-radius: 6px;">
@@ -2661,8 +2766,9 @@ async function loadCompanyLedgerWidget(ticker) {
 
     const cardsHtml = res.events.map(ev => {
       const confBadge = renderConfidenceBadge(ev.confidence, ev.confidence_code);
-      const targetTags = renderTargetIdentifiedBadges(ev.target_identified);
-      const metricTags = renderMetricsConditionBadges(ev.metrics_condition);
+      const rawText = ev.content || ev.raw_event || '';
+      const targetTags = renderTargetIdentifiedBadges(ev.target || ev.target_identified);
+      const metricTags = renderMetricsConditionBadges(ev.metrics || ev.metrics_condition);
 
       return `
         <div class="mini-ledger-card">
@@ -2674,7 +2780,7 @@ async function loadCompanyLedgerWidget(ticker) {
             </div>
           </div>
           <div class="mini-ledger-content">
-            ${escapeHtml(ev.raw_event || '')}
+            ${renderLedgerContent(rawText, '')}
           </div>
           <div class="mini-ledger-tags">
             ${targetTags !== '<span style="color: var(--text-muted); font-size: 0.78rem;">-</span>' ? targetTags : ''}

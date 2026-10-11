@@ -13,17 +13,22 @@ from typing import Any, Optional
 LEDGER_FILE = Path(__file__).resolve().parent.parent.parent / "docs" / "2026-10-11_36entities_2026_full_year_layer_matrix.md"
 
 _CACHED_LEDGER: list[dict[str, Any]] = []
+_LAST_MTIME: float = 0.0
 
 
 class LedgerService:
     @classmethod
     def load_ledger(cls, force_reload: bool = False) -> list[dict[str, Any]]:
-        global _CACHED_LEDGER
-        if _CACHED_LEDGER and not force_reload:
-            return _CACHED_LEDGER
+        global _CACHED_LEDGER, _LAST_MTIME
 
         if not LEDGER_FILE.exists():
             return []
+
+        current_mtime = LEDGER_FILE.stat().st_mtime
+        if _CACHED_LEDGER and not force_reload and (current_mtime == _LAST_MTIME):
+            return _CACHED_LEDGER
+
+        _LAST_MTIME = current_mtime
 
         lines = LEDGER_FILE.read_text(encoding="utf-8").splitlines()
         rows: list[dict[str, Any]] = []
@@ -50,7 +55,30 @@ class LedgerService:
                     name = re.sub(r"\(.*?\)", "", entity_raw).strip()
 
                     conf_raw = parts[7].replace("`", "").replace("[", "").replace("]", "").strip()
-                    is_twitter = "[𝕏 Radar]" in parts[3]
+                    raw_content = parts[3]
+                    is_twitter = "[𝕏 Radar]" in raw_content or "[𝕏" in raw_content
+
+                    clean_content = raw_content
+                    handle = ""
+
+                    # Clean up: remove [𝕏 Radar] and display name, keep only '@handle: text'
+                    if is_twitter:
+                        # Match: [𝕏 Radar] PEquity Research(@pequityresearch): body
+                        # or: [𝕏 Radar] Dan Nystedt(dnystedt): body
+                        tw_match = re.search(r"\[𝕏\s*Radar\]\s*.*?\(@?([a-zA-Z0-9_]+)\)\s*:\s*(.*)", raw_content)
+                        if tw_match:
+                            h_raw = tw_match.group(1).strip()
+                            handle = f"@{h_raw.lstrip('@')}"
+                            tweet_body = tw_match.group(2).strip()
+                            clean_content = f"{handle}: {tweet_body}"
+                        else:
+                            # Fallback if pattern slightly varies
+                            clean_content = re.sub(r"^\[𝕏\s*Radar\]\s*", "", raw_content)
+                            handle_match = re.search(r"\(@?([a-zA-Z0-9_]+)\)", clean_content)
+                            if handle_match:
+                                h_raw = handle_match.group(1)
+                                handle = f"@{h_raw.lstrip('@')}"
+                                clean_content = re.sub(r"^.*?\(@?[a-zA-Z0-9_]+\)\s*:\s*", f"{handle}: ", clean_content)
 
                     rows.append({
                         "id": len(rows) + 1,
@@ -60,7 +88,9 @@ class LedgerService:
                         "ticker": ticker,
                         "country": country,
                         "date": parts[2],
-                        "content": parts[3],
+                        "content": clean_content,
+                        "raw_content": raw_content,
+                        "handle": handle,
                         "target": parts[4],
                         "metrics": parts[5],
                         "event_type": parts[6],
@@ -82,11 +112,12 @@ class LedgerService:
         month: Optional[str] = None,
         confidence: Optional[str] = None,
         query: Optional[str] = None,
+        order: str = "desc",
         limit: int = 1000,
         offset: int = 0,
     ) -> dict[str, Any]:
         all_events = cls.load_ledger()
-        filtered = all_events
+        filtered = list(all_events)
 
         if ticker:
             ticker_upper = ticker.strip().upper()
@@ -114,6 +145,10 @@ class LedgerService:
                 or q_lower in e["metrics"].lower()
                 or q_lower in e["entity"].lower()
             ]
+
+        # Sort by date: default descending (최신순: 2026-10 -> 2026-01)
+        is_desc = (order.lower() != "asc")
+        filtered.sort(key=lambda e: (e["date"], e["id"]), reverse=is_desc)
 
         total_count = len(filtered)
         paginated = filtered[offset : offset + limit]

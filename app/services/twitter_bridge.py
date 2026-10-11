@@ -486,10 +486,8 @@ class TwitterBridge:
             event_date = self.parse_published_date(tweet.get("published_at", ""))
             author_str = f"{tweet.get('author_name', 'Unknown')}({tweet.get('author_handle', '')})"
 
-            # Clean and truncate content for matrix representation
-            clean_content = " ".join(content.strip().splitlines())
-            if len(clean_content) > 120:
-                clean_content = clean_content[:117] + "..."
+            # Clean content for markdown matrix: replace newlines and escape pipe characters
+            clean_content = " ".join(content.strip().splitlines()).replace("|", "\\|")
 
             formatted_content = f"[𝕏 Radar] {author_str}: {clean_content}"
             type_confidence_str = f"{event_type} `[{confidence}]`"

@@ -221,12 +221,51 @@ def main():
     h2_rows = parse_existing_matrix(H2_MATRIX_FILE)
     print(f"  • H2 통합 이벤트 수: {len(h2_rows)}건")
 
-    print("✨ 3. 2026년 전수 병합 및 정렬 중 (Layer -> Entity -> Date)...")
-    combined = h1_rows + h2_rows
-    sorted_all = sort_rows(combined)
-    print(f"  • 2026 연간 총 이벤트 수: {len(sorted_all)}건")
+    print("📡 3. SignalForge timeline.db에서 신규 백필된 2026년 과거 𝕏 시그널 추출 중...")
+    from app.services.twitter_bridge import TwitterBridge
+    bridge = TwitterBridge()
+    unpivoted_tweets = bridge.convert_to_unpivoted_events(limit=3500)
+    
+    # Filter backfilled tweets in 2026-01 ~ 2026-08
+    backfilled_rows = []
+    existing_contents = {r["content"] for r in (h1_rows + h2_rows)}
 
-    print(f"💾 4. 신규 연간 파일 작성 중: {OUTPUT_FILE}")
+    for ev in unpivoted_tweets:
+        if ev.date.startswith("2026-") and ev.date < "2026-09-01":
+            if ev.content not in existing_contents:
+                existing_contents.add(ev.content)
+                target, metrics = extract_target_and_metrics(ev.content, ev.entity)
+                
+                # Parse event type & confidence from type_confidence_str
+                # e.g. "💬 분석가전망 `[C2]`" -> type="💬 분석가전망", conf="`[C2]`"
+                type_conf = ev.event_type_confidence.strip()
+                m_conf = re.search(r"(`\[C[1-4]\]`)", type_conf)
+                if m_conf:
+                    conf_str = m_conf.group(1)
+                    ev_type = type_conf.replace(conf_str, "").strip()
+                else:
+                    conf_str = "`[C3]`"
+                    ev_type = type_conf
+
+                backfilled_rows.append({
+                    "layer": ev.layer,
+                    "entity": ev.entity,
+                    "date": ev.date,
+                    "content": ev.content,
+                    "target": target,
+                    "metrics": metrics,
+                    "event_type": ev_type,
+                    "confidence": conf_str,
+                })
+
+    print(f"  • 신규 백필 𝕏 과거 시그널 추가 건수 (2026-01~08): {len(backfilled_rows)}건")
+
+    print("✨ 4. 2026년 전수 병합 및 정렬 중 (Layer -> Entity -> Date)...")
+    combined = h1_rows + h2_rows + backfilled_rows
+    sorted_all = sort_rows(combined)
+    print(f"  • 2026 연간 총 이벤트 수: {len(sorted_all)}건 (기존 985건 -> 신규 {len(sorted_all)}건 확장)")
+
+    print(f"💾 5. 신규 연간 파일 작성 중: {OUTPUT_FILE}")
     rendered = build_full_year_markdown(sorted_all)
     OUTPUT_FILE.write_text(rendered, encoding="utf-8")
     print("✅ 2026년 연간 원장 빌드 완료!")
@@ -234,3 +273,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

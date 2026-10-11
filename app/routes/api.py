@@ -2018,7 +2018,8 @@ def get_2026_ledger():
     layer = request.args.get("layer")
     month = request.args.get("month")
     confidence = request.args.get("confidence")
-    query = request.args.get("query")
+    query = request.args.get("q") or request.args.get("query")
+    order = request.args.get("order", "desc")
     limit = int(request.args.get("limit", 1500))
     offset = int(request.args.get("offset", 0))
 
@@ -2028,6 +2029,7 @@ def get_2026_ledger():
         month=month,
         confidence=confidence,
         query=query,
+        order=order,
         limit=limit,
         offset=offset
     )
@@ -2044,7 +2046,8 @@ def export_2026_ledger_csv():
     layer = request.args.get("layer")
     month = request.args.get("month")
     confidence = request.args.get("confidence")
-    query = request.args.get("query")
+    query = request.args.get("q") or request.args.get("query")
+    order = request.args.get("order", "desc")
 
     result = LedgerService.get_filtered_events(
         ticker=ticker,
@@ -2052,6 +2055,7 @@ def export_2026_ledger_csv():
         month=month,
         confidence=confidence,
         query=query,
+        order=order,
         limit=5000,
         offset=0
     )
